@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {"user": {"title": "UltraWideLock", "description": "Expose lock controls and live UWB data from commissioned UltraWideLock Matter devices."}},
+    "abort": {"single_instance_allowed": "UltraWideLock is already configured."}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Credential names",
+        "description": "Every UWB credential observed by a lock is collected automatically. Enter a friendly name next to each ID; leave a field empty to keep it unknown."
+      }
+    }
+  }
+}
