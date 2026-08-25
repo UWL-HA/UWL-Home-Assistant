@@ -43,6 +43,7 @@ class UwbMatterEntity(Entity):
         self._hass = hass
         self._config_entry: ConfigEntry | None = None
         self._node_id = node_id
+        self._attribute_id = attribute_id
         self._attribute_path = create_attribute_path(
             ENDPOINT_ID, cluster_id, attribute_id
         )

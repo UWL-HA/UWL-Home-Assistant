@@ -40,6 +40,8 @@ class UwbApproachCard extends HTMLElement {
       const cluster = 4294048784;
       const find = attribute => peers.find(entry =>
         entry.unique_id?.endsWith(`-1-${cluster}-${attribute}`))?.entity_id;
+      const special = suffix => peers.find(entry =>
+        entry.unique_id?.endsWith(suffix))?.entity_id;
       this._discovered = {
         presence_entity: find(0),
         distance_entity: find(1),
@@ -47,6 +49,7 @@ class UwbApproachCard extends HTMLElement {
         threshold_entity: find(3),
         movement_entity: find(4),
         approach_entity: find(5),
+        status_entity: special("-freshness-status"),
       };
       this._resolved = true;
     } catch (error) {
@@ -71,6 +74,7 @@ class UwbApproachCard extends HTMLElement {
     const threshold = Number.parseFloat(this.value(this.entity("threshold_entity"))?.state);
     const configuredApproach = Number.parseFloat(this.value(this.entity("approach_entity"))?.state);
     const movement = this.value(this.entity("movement_entity"))?.state || "unknown";
+    const dataStatus = this.value(this.entity("status_entity"))?.state;
     const credentialEntity = this.entity("credential_entity");
     const credential = credentialEntity ? this.value(credentialEntity)?.state : "";
     const unlockAt = Number.isFinite(threshold) ? threshold : 100;
@@ -84,7 +88,8 @@ class UwbApproachCard extends HTMLElement {
     const thresholdPosition = Math.max(0, Math.min(100, (1 - unlockAt / session) * 100));
     const approachPosition = Math.max(0, Math.min(100, (1 - approach / session) * 100));
     const unlocked = lock?.state === "unlocked";
-    const stage = !presence ? "Waiting for authenticated device"
+    const stage = dataStatus === "stale" ? "UWB data stale"
+      : !presence ? "Waiting for authenticated device"
       : !validRange ? "Session detected"
       : distance <= unlockAt ? (unlocked ? "Unlocked" : "Inside unlock zone")
       : distance <= approach ? "Approach armed" : "Authenticated";
@@ -263,6 +268,8 @@ class UwbOverviewCard extends HTMLElement {
         entry.unique_id?.endsWith(`-1-${cluster}-${attribute}`))?.entity_id;
       const history = suffix => peers.find(entry =>
         entry.entity_id.startsWith("sensor.") && entry.unique_id?.endsWith(`-history-${suffix}`))?.entity_id;
+      const special = suffix => peers.find(entry =>
+        entry.entity_id.startsWith("sensor.") && entry.unique_id?.endsWith(suffix))?.entity_id;
       const custom = 4294048784;
       const doorLock = 257;
       this._entities = {
@@ -277,6 +284,8 @@ class UwbOverviewCard extends HTMLElement {
         lastSeen: history("last_seen"), lastSeenAt: history("last_seen_at"),
         lastUnlocked: history("last_unlocked"), lastUnlockedAt: history("last_unlocked_at"),
         lastUnlockedDistance: history("last_unlocked_distance"),
+        dataStatus: special("-freshness-status"),
+        lastUwbUpdate: special("-freshness-last-update"),
       };
       this._resolved = true;
     } catch (error) {
@@ -377,6 +386,8 @@ class UwbOverviewCard extends HTMLElement {
           <button class="metric" data-info="${this.entity("distance") || ""}"><ha-icon icon="mdi:ruler"></ha-icon><small>Distance</small><b>${this.escape(this.display("distance"))}</b></button>
           <button class="metric" data-info="${this.entity("credential") || ""}"><ha-icon icon="mdi:cellphone-key"></ha-icon><small>Current device</small><b>${this.escape(this.display("credential"))}</b></button>
           <button class="metric" data-info="${this.entity("movement") || ""}"><ha-icon icon="mdi:swap-horizontal"></ha-icon><small>Movement</small><b>${this.escape(this.display("movement", true))}</b></button>
+          <button class="metric" data-info="${this.entity("dataStatus") || ""}"><ha-icon icon="mdi:access-point-check"></ha-icon><small>Data status</small><b>${this.escape(this.display("dataStatus", true))}</b></button>
+          <button class="metric" data-info="${this.entity("lastUwbUpdate") || ""}"><ha-icon icon="mdi:update"></ha-icon><small>Last update</small><b>${this.escape(this.timestamp("lastUwbUpdate"))}</b></button>
         </div></section>
         <section><div class="section-head"><ha-icon icon="mdi:tune-variant"></ha-icon><h3>Unlock &amp; Relock Configuration</h3></div><div class="configuration">
           ${this.numberControl("approachDistance", "Approach distance", "mdi:map-marker-distance")}

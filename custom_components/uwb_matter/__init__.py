@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from matter_server.common.helpers.util import create_attribute_path
 from matter_server.common.models import EventType
 
 from homeassistant.components.frontend import add_extra_js_url
@@ -15,11 +16,22 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_CREDENTIAL_NAMES, DOMAIN, PLATFORMS
+from .const import (
+    CONF_CREDENTIAL_NAMES,
+    CONF_CREDENTIAL_PRESENCE,
+    CONF_STALE_TIMEOUT,
+    DEFAULT_STALE_TIMEOUT,
+    CUSTOM_CLUSTER_ID,
+    DEVICE_IN_RANGE_ATTRIBUTE_ID,
+    DOMAIN,
+    ENDPOINT_ID,
+    LIVE_UWB_ATTRIBUTE_IDS,
+    PLATFORMS,
+)
 from .history import UwbHistoryStore
 
 CARD_URL = "/uwb_matter/uwb-approach-card.js"
-CARD_RESOURCE_URL = f"{CARD_URL}?v=0.13.3"
+CARD_RESOURCE_URL = f"{CARD_URL}?v=0.14.0"
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -67,12 +79,66 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     history.credential_names = dict(
         entry.options.get(CONF_CREDENTIAL_NAMES, {})
     )
+    history.credential_presence = dict(
+        entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
+    )
+    history.stale_timeout = entry.options.get(
+        CONF_STALE_TIMEOUT, DEFAULT_STALE_TIMEOUT
+    )
     hass.data[DOMAIN] = history
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     matter = get_matter(hass)
     server_info = matter.matter_client.server_info
     assert server_info is not None
     fabric_id = server_info.compressed_fabric_id
+    tracked_nodes: set[int] = set()
+    presence_path = create_attribute_path(
+        ENDPOINT_ID, CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID
+    )
+
+    def track_node(node: object) -> None:
+        """Track live UWB updates independently of enabled entities."""
+        node_id = getattr(node, "node_id", None)
+        attributes = getattr(getattr(node, "node_data", None), "attributes", {})
+        if (
+            node_id is None
+            or node_id in tracked_nodes
+            or presence_path not in attributes
+        ):
+            return
+        tracked_nodes.add(node_id)
+        history.initialize_freshness(node_id, bool(attributes.get(presence_path)))
+        for attribute_id in LIVE_UWB_ATTRIBUTE_IDS:
+            path = create_attribute_path(
+                ENDPOINT_ID, CUSTOM_CLUSTER_ID, attribute_id
+            )
+
+            def updated(
+                _event: EventType,
+                value: object,
+                attribute_id: int = attribute_id,
+                node_id: int = node_id,
+            ) -> None:
+                history.mark_uwb_update(node_id, attribute_id, value)
+
+            entry.async_on_unload(
+                matter.matter_client.subscribe_events(
+                    callback=updated,
+                    event_filter=EventType.ATTRIBUTE_UPDATED,
+                    node_filter=node_id,
+                    attr_path_filter=path,
+                )
+            )
+
+    for node in matter.matter_client.get_nodes():
+        track_node(node)
+    for event_type in (EventType.NODE_ADDED, EventType.NODE_UPDATED):
+        entry.async_on_unload(
+            matter.matter_client.subscribe_events(
+                callback=lambda _event, node: track_node(node),
+                event_filter=event_type,
+            )
+        )
 
     def remove_companion_device(operational_id: str) -> None:
         """Remove one UltraWideLock companion device and all its entities."""
@@ -108,6 +174,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if node_id is None:
             return
         operational_id = f"{fabric_id:016X}-{node_id:016X}"
+        tracked_nodes.discard(node_id)
         remove_companion_device(operational_id)
 
     entry.async_on_unload(
@@ -123,12 +190,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload an UltraWideLock Matter sensors config entry."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
+        history: UwbHistoryStore | None = hass.data.get(DOMAIN)
+        if history is not None:
+            history.shutdown()
         hass.data.pop(DOMAIN, None)
     return unloaded
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload only when a friendly credential name changes."""
+    """Reload when credential names or presence selections change."""
     history: UwbHistoryStore | None = hass.data.get(DOMAIN)
     if history is not None:
         old_named = {
@@ -136,7 +206,21 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
         }
         new_names = dict(entry.options.get(CONF_CREDENTIAL_NAMES, {}))
         new_named = {key: value for key, value in new_names.items() if value}
+        old_presence = history.credential_presence
+        new_presence = dict(
+            entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
+        )
         history.credential_names = new_names
-        if old_named == new_named:
+        history.credential_presence = new_presence
+        old_timeout = history.stale_timeout
+        new_timeout = entry.options.get(
+            CONF_STALE_TIMEOUT, DEFAULT_STALE_TIMEOUT
+        )
+        history.stale_timeout = new_timeout
+        if (
+            old_named == new_named
+            and old_presence == new_presence
+            and old_timeout == new_timeout
+        ):
             return
     await hass.config_entries.async_reload(entry.entry_id)

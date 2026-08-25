@@ -20,6 +20,7 @@ from .const import (
     CONF_CREDENTIAL_NAMES,
     CREDENTIAL_ID_ATTRIBUTE_ID,
     CUSTOM_CLUSTER_ID,
+    DEVICE_IN_RANGE_ATTRIBUTE_ID,
     DISTANCE_MM_ATTRIBUTE_ID,
     DOOR_LOCK_CLUSTER_ID,
     DOMAIN,
@@ -47,6 +48,20 @@ async def async_setup_entry(
             (CUSTOM_CLUSTER_ID, MOVEMENT_STATE_ATTRIBUTE_ID),
         ),
         _sensor_factory,
+    )
+    async_setup_uwb_entities(
+        hass,
+        entry,
+        async_add_entities,
+        ((CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID),),
+        UwbDataStatusSensor,
+    )
+    async_setup_uwb_entities(
+        hass,
+        entry,
+        async_add_entities,
+        ((CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID),),
+        UwbLastUpdateSensor,
     )
     async_setup_uwb_entities(
         hass,
@@ -97,7 +112,28 @@ def _sensor_factory(
     return entity_class(hass, node_id, cluster_id, attribute_id)
 
 
-class UwbDistanceSensor(UwbMatterEntity, SensorEntity):
+class UwbFreshnessAwareSensor(UwbMatterEntity, SensorEntity):
+    """Base for live values that must clear when their feed becomes stale."""
+
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to both Matter values and local freshness changes."""
+        await super().async_added_to_hass()
+        history: UwbHistoryStore = self._hass.data[DOMAIN]
+        self.async_on_remove(history.subscribe_freshness(self._freshness_updated))
+
+    def _freshness_updated(self, node_id: int) -> None:
+        """Refresh this entity when its node becomes stale or live."""
+        if node_id == self._node_id:
+            self.schedule_update_ha_state()
+
+    @property
+    def _uwb_value_is_fresh(self) -> bool:
+        history: UwbHistoryStore = self._hass.data[DOMAIN]
+        return history.attribute_is_fresh(self._node_id, self._attribute_id)
+
+
+class UwbDistanceSensor(UwbFreshnessAwareSensor):
     """Live authenticated UWB distance."""
 
     _attr_name = "UWB distance"
@@ -109,10 +145,14 @@ class UwbDistanceSensor(UwbMatterEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return distance in centimetres."""
-        return self._value / 10 if isinstance(self._value, int) else None
+        return (
+            self._value / 10
+            if self._uwb_value_is_fresh and isinstance(self._value, int)
+            else None
+        )
 
 
-class UwbMovementStateSensor(UwbMatterEntity, SensorEntity):
+class UwbMovementStateSensor(UwbFreshnessAwareSensor):
     """Filtered movement direction of the currently ranged credential."""
 
     _attr_name = "UWB movement"
@@ -120,11 +160,85 @@ class UwbMovementStateSensor(UwbMatterEntity, SensorEntity):
     _attr_options = ["unknown", "stationary", "approaching", "leaving"]
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         """Return a stable state name for the firmware enum."""
-        if isinstance(self._value, int) and 0 <= self._value < len(self._attr_options):
+        if (
+            self._uwb_value_is_fresh
+            and isinstance(self._value, int)
+            and 0 <= self._value < len(self._attr_options)
+        ):
             return self._attr_options[self._value]
-        return "unknown"
+        return None
+
+
+class UwbFreshnessSensor(UwbMatterEntity, SensorEntity):
+    """Base for local UWB subscription-health entities."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self, hass: HomeAssistant, node_id: int, cluster_id: int, attribute_id: int
+    ) -> None:
+        """Initialize a uniquely identified freshness entity."""
+        super().__init__(hass, node_id, cluster_id, attribute_id)
+        self._history: UwbHistoryStore = hass.data[DOMAIN]
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to local freshness state."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._history.subscribe_freshness(self._freshness_updated)
+        )
+
+    def _freshness_updated(self, node_id: int) -> None:
+        """Refresh when this node receives data or reaches its deadline."""
+        if node_id == self._node_id:
+            self.schedule_update_ha_state()
+
+
+class UwbDataStatusSensor(UwbFreshnessSensor):
+    """Subscription freshness of the live UWB data stream."""
+
+    _attr_name = "UWB data status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["live", "stale", "unavailable"]
+
+    def __init__(
+        self, hass: HomeAssistant, node_id: int, cluster_id: int, attribute_id: int
+    ) -> None:
+        super().__init__(hass, node_id, cluster_id, attribute_id)
+        self._attr_unique_id = f"{self._attr_unique_id}-freshness-status"
+
+    @property
+    def available(self) -> bool:
+        """Keep the diagnostic itself available when its Matter node is not."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Return live, stale, or unavailable."""
+        node = self._matter.matter_client.get_node(self._node_id)
+        if not node.available:
+            return "unavailable"
+        return self._history.freshness_status(self._node_id)
+
+
+class UwbLastUpdateSensor(UwbFreshnessSensor):
+    """Timestamp of the latest live UWB subscription update."""
+
+    _attr_name = "Last UWB update"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self, hass: HomeAssistant, node_id: int, cluster_id: int, attribute_id: int
+    ) -> None:
+        super().__init__(hass, node_id, cluster_id, attribute_id)
+        self._attr_unique_id = f"{self._attr_unique_id}-freshness-last-update"
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the most recent UWB update timestamp."""
+        return self._history.last_uwb_update(self._node_id)
 
 
 class UwbCredentialIdSensor(UwbMatterEntity, SensorEntity):

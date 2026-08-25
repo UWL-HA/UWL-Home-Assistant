@@ -21,6 +21,10 @@ Matter fabric or CASE session.
 | UWB distance | Sensor | Live distance in centimetres |
 | UWB movement | Sensor | Unknown, stationary, approaching, or leaving |
 | UWB credential | Sensor | Friendly name of the credential currently in range |
+| UWB data status | Sensor | Live, stale, or unavailable subscription status |
+| Last UWB update | Sensor | Timestamp of the latest live UWB update |
+| Credential in range | Optional binary sensor | Presence of one selected credential |
+| Approach event | Event | Approach, threshold, lock and session lifecycle events |
 | Approach, unlock and relock distance | Numbers | UWB policy distances in centimetres |
 | Motor time | Number | Local lock motor duration |
 | UltraWideLock unlock/relock | Switches | Allow or prevent automatic local actions |
@@ -28,9 +32,24 @@ Matter fabric or CASE session.
 | Last device seen | Sensors | Previous completed ranging session and time |
 | Last device unlocked | Sensors | Credential, time, and distance of the last unlock |
 
+Distance writes are validated before they reach Matter. Home Assistant requires
+`unlock distance < approach distance < relock distance` and shows the current
+values when a proposed change would break that order.
+
 Credential IDs are collected automatically. Give them friendly names under
-**Settings > Devices & services > UltraWideLock > Configure**. The pseudonymous
-raw ID remains available as a state attribute.
+**Settings > Devices & services > UltraWideLock > Configure**. On the same screen,
+you can optionally create a separate presence sensor for each credential. The
+pseudonymous raw ID remains available as a state attribute.
+
+The same configuration screen controls the stale-data timeout (15 seconds by
+default). When an active UWB stream stops updating, its status becomes `stale`
+and the live distance and movement entities are cleared. With no device in range,
+the status is `unavailable`.
+
+The **Approach event** entity emits `approach_started`,
+`unlock_threshold_crossed`, `unlocked`, `approach_aborted`,
+`device_left_range`, and `relocked`. Each event includes the credential name and
+ID, current and minimum distance, and session duration for automations.
 
 ## Dashboard cards
 

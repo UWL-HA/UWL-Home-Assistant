@@ -6,8 +6,11 @@
   "options": {
     "step": {
       "init": {
-        "title": "Credential names",
-        "description": "Every UWB credential observed by a lock is collected automatically. Enter a friendly name next to each ID; leave a field empty to keep it unknown."
+        "title": "Credentials",
+        "description": "Every observed UWB credential is collected automatically. Enter a friendly name and optionally create a separate presence sensor for it. Presence options are shown as presence__ followed by the credential ID.",
+        "data": {
+          "stale_timeout_seconds": "Clear stale UWB data after (seconds)"
+        }
       }
     }
   }
