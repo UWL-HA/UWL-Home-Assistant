@@ -32,6 +32,9 @@ Matter fabric or CASE session.
 | Last device seen | Sensors | Previous completed ranging session and time |
 | Last device unlocked | Sensors | Credential, time, and distance of the last unlock |
 
+Unlock history follows native Matter Door Lock operation events, so repeated
+unlock operations are recorded even when the lock was already unlocked.
+
 Distance writes are validated before they reach Matter. Home Assistant requires
 `unlock distance < approach distance < relock distance` and shows the current
 values when a proposed change would break that order.

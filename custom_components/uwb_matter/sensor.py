@@ -1,9 +1,10 @@
 """Sensors for UltraWideLock Matter devices."""
 
 from datetime import datetime
+from time import monotonic
 
 from matter_server.common.helpers.util import create_attribute_path
-from matter_server.common.models import EventType
+from matter_server.common.models import EventType, MatterNodeEvent
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -27,7 +28,9 @@ from .const import (
     DOMAIN,
     ENDPOINT_ID,
     LOCK_STATE_ATTRIBUTE_ID,
+    LOCK_OPERATION_EVENT_ID,
     MOVEMENT_STATE_ATTRIBUTE_ID,
+    UNLOCK_OPERATION_TYPES,
 )
 from .entity import UwbMatterEntity, async_setup_uwb_entities
 from .history import HistoryRecord, UwbHistoryStore
@@ -450,6 +453,8 @@ class UwbLastUnlockedSensor(UwbHistorySensor):
         ).node_data.attributes.get(distance_path)
         self._current_distance_mm = distance if isinstance(distance, int) else None
         self._distance_path = distance_path
+        self._last_operation_event_at = 0.0
+        self._last_state_unlock_at = 0.0
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to both LockState and the current credential."""
@@ -460,6 +465,13 @@ class UwbLastUnlockedSensor(UwbHistorySensor):
                 event_filter=EventType.ATTRIBUTE_UPDATED,
                 node_filter=self._node_id,
                 attr_path_filter=self._credential_path,
+            )
+        )
+        self.async_on_remove(
+            self._matter.matter_client.subscribe_events(
+                callback=self._node_event,
+                event_filter=EventType.NODE_EVENT,
+                node_filter=self._node_id,
             )
         )
         self.async_on_remove(
@@ -481,21 +493,47 @@ class UwbLastUnlockedSensor(UwbHistorySensor):
         """Track the current ranging distance in millimetres."""
         self._current_distance_mm = data if isinstance(data, int) else None
 
+    def _node_event(self, event: EventType, data: MatterNodeEvent) -> None:
+        """Record every native Door Lock unlock operation."""
+        if (
+            data.endpoint_id != ENDPOINT_ID
+            or data.cluster_id != DOOR_LOCK_CLUSTER_ID
+            or data.event_id != LOCK_OPERATION_EVENT_ID
+            or not data.data
+            or data.data.get("lockOperationType") not in UNLOCK_OPERATION_TYPES
+        ):
+            return
+        now = monotonic()
+        self._last_operation_event_at = now
+        if now - self._last_state_unlock_at <= 2:
+            return
+        self._record_current_unlock()
+
+    def _record_current_unlock(self) -> None:
+        """Store an unlock with the currently ranged credential and distance."""
+        self._record = self._history.record_unlock(
+            self._node_id,
+            self._current_credential,
+            self._current_distance_mm,
+        )
+        self.schedule_update_ha_state()
+
     def _attribute_updated(self, event: EventType, data: object) -> None:
-        """Attribute an unlocked transition to the current credential."""
+        """Use an unlocked state transition when no operation event arrives."""
         previous = self._value
         super()._attribute_updated(event, data)
-        if isinstance(data, int) and data == 2 and previous != 2:
-            self._record = self._history.record_unlock(
-                self._node_id,
-                self._current_credential,
-                self._current_distance_mm,
-            )
-            self.schedule_update_ha_state()
+        if (
+            isinstance(data, int)
+            and data == 2
+            and previous != 2
+            and monotonic() - self._last_operation_event_at > 2
+        ):
+            self._last_state_unlock_at = monotonic()
+            self._record_current_unlock()
 
 
 class UwbLastUnlockedAtSensor(UwbHistoryTimestampSensor):
-    """Time the lock most recently transitioned to unlocked."""
+    """Time of the lock's most recent unlock operation."""
 
     _attr_name = "Last device unlocked at"
     _history_kind = "last_unlocked"

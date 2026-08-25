@@ -1,10 +1,11 @@
 """Approach lifecycle events for UltraWideLock Matter devices."""
 
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from matter_server.common.helpers.util import create_attribute_path
-from matter_server.common.models import EventType
+from matter_server.common.models import EventType, MatterNodeEvent
 
 from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +23,8 @@ from .const import (
     DOMAIN,
     ENDPOINT_ID,
     LOCK_STATE_ATTRIBUTE_ID,
+    LOCK_OPERATION_EVENT_ID,
+    UNLOCK_OPERATION_TYPES,
     UNLOCK_THRESHOLD_CM_ATTRIBUTE_ID,
 )
 from .entity import UwbMatterEntity, async_setup_uwb_entities
@@ -91,6 +94,8 @@ class UwbEvent(UwbMatterEntity, EventEntity):
         self._unlocked = False
         self._has_live_distance = False
         self._last_session: dict[str, Any] | None = None
+        self._last_operation_event_at = 0.0
+        self._last_state_unlock_at = 0.0
         self._history: UwbHistoryStore = hass.data[DOMAIN]
         self._data_status = self._history.freshness_status(node_id)
 
@@ -125,7 +130,31 @@ class UwbEvent(UwbMatterEntity, EventEntity):
         self.async_on_remove(
             self._history.subscribe_freshness(self._freshness_updated)
         )
+        self.async_on_remove(
+            self._matter.matter_client.subscribe_events(
+                callback=self._node_event,
+                event_filter=EventType.NODE_EVENT,
+                node_filter=self._node_id,
+            )
+        )
         self._presence_updated(bool(self._value))
+
+    def _node_event(self, event: EventType, data: MatterNodeEvent) -> None:
+        """Publish every native Door Lock unlock operation."""
+        if (
+            data.endpoint_id != ENDPOINT_ID
+            or data.cluster_id != DOOR_LOCK_CLUSTER_ID
+            or data.event_id != LOCK_OPERATION_EVENT_ID
+            or not data.data
+            or data.data.get("lockOperationType") not in UNLOCK_OPERATION_TYPES
+        ):
+            return
+        now = monotonic()
+        self._last_operation_event_at = now
+        self._unlocked = True
+        if now - self._last_state_unlock_at <= 2:
+            return
+        self._emit("unlocked")
 
     def _freshness_updated(self, node_id: int) -> None:
         """Publish loss and restoration of the live UWB data stream."""
@@ -167,7 +196,9 @@ class UwbEvent(UwbMatterEntity, EventEntity):
             self._lock_state = value
             if value == 2 and previous != 2:
                 self._unlocked = True
-                self._emit("unlocked")
+                if monotonic() - self._last_operation_event_at > 2:
+                    self._last_state_unlock_at = monotonic()
+                    self._emit("unlocked")
             elif value == 1 and previous == 2:
                 event_data = (
                     self._event_data()
