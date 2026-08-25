@@ -38,9 +38,9 @@ async def async_setup_entry(
         _binary_sensor_factory,
     )
     credential_names = entry.options.get(CONF_CREDENTIAL_NAMES, {})
-    for credential_id, enabled in entry.options.get(
-        CONF_CREDENTIAL_PRESENCE, {}
-    ).items():
+    presence_options = entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
+    for credential_id in credential_names:
+        enabled = presence_options.get(credential_id, True)
         if not enabled:
             continue
         async_setup_uwb_entities(

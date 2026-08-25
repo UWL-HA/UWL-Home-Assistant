@@ -19,19 +19,26 @@ from .const import (
     DEVICE_IN_RANGE_ATTRIBUTE_ID,
     DISTANCE_MM_ATTRIBUTE_ID,
     DOOR_LOCK_CLUSTER_ID,
+    DOMAIN,
     ENDPOINT_ID,
     LOCK_STATE_ATTRIBUTE_ID,
     UNLOCK_THRESHOLD_CM_ATTRIBUTE_ID,
 )
 from .entity import UwbMatterEntity, async_setup_uwb_entities
+from .history import UwbHistoryStore
 
 EVENT_TYPES = [
+    "device_detected",
     "approach_started",
     "unlock_threshold_crossed",
     "unlocked",
     "approach_aborted",
+    "left_without_unlock",
+    "left_after_unlock",
     "device_left_range",
     "relocked",
+    "data_stale",
+    "data_restored",
 ]
 
 
@@ -46,14 +53,14 @@ async def async_setup_entry(
         entry,
         async_add_entities,
         ((CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID),),
-        UwbApproachEvent,
+        UwbEvent,
     )
 
 
-class UwbApproachEvent(UwbMatterEntity, EventEntity):
-    """Publish meaningful transitions from an authenticated UWB session."""
+class UwbEvent(UwbMatterEntity, EventEntity):
+    """Publish UWB session, threshold, lock, and data-health transitions."""
 
-    _attr_name = "Approach event"
+    _attr_name = "UWB event"
     _attr_event_types = EVENT_TYPES
 
     def __init__(
@@ -79,10 +86,13 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
         self._session_started: datetime | None = None
         self._minimum_mm: int | None = None
         self._approach_active = False
+        self._device_detected = False
         self._unlock_crossed = False
         self._unlocked = False
         self._has_live_distance = False
         self._last_session: dict[str, Any] | None = None
+        self._history: UwbHistoryStore = hass.data[DOMAIN]
+        self._data_status = self._history.freshness_status(node_id)
 
     @staticmethod
     def _integer(value: object) -> int | None:
@@ -112,7 +122,21 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
                     attr_path_filter=path,
                 )
             )
+        self.async_on_remove(
+            self._history.subscribe_freshness(self._freshness_updated)
+        )
         self._presence_updated(bool(self._value))
+
+    def _freshness_updated(self, node_id: int) -> None:
+        """Publish loss and restoration of the live UWB data stream."""
+        if node_id != self._node_id:
+            return
+        previous = self._data_status
+        self._data_status = self._history.freshness_status(node_id)
+        if self._data_status == "stale" and previous != "stale":
+            self._emit("data_stale")
+        elif self._data_status == "live" and previous == "stale":
+            self._emit("data_restored")
 
     def _attribute_updated(self, event: EventType, data: object) -> None:
         """Handle the presence attribute subscribed by the base entity."""
@@ -165,6 +189,7 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
             self._session_started = datetime.now(UTC)
             self._minimum_mm = self._distance_mm
             self._approach_active = False
+            self._device_detected = False
             self._unlock_crossed = False
             self._unlocked = False
             self._has_live_distance = False
@@ -172,11 +197,15 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
         elif not in_range and self._session_started is not None:
             if self._approach_active and not self._unlocked:
                 self._emit("approach_aborted")
+            self._emit(
+                "left_after_unlock" if self._unlocked else "left_without_unlock"
+            )
             self._emit("device_left_range")
             self._last_session = self._event_data()
             self._session_started = None
             self._minimum_mm = None
             self._approach_active = False
+            self._device_detected = False
             self._unlock_crossed = False
             self._unlocked = False
             self._has_live_distance = False
@@ -192,6 +221,9 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
             return
         if self._minimum_mm is None or self._distance_mm < self._minimum_mm:
             self._minimum_mm = self._distance_mm
+        if not self._device_detected:
+            self._device_detected = True
+            self._emit("device_detected")
         if self._approach_cm is not None:
             inside_approach = self._distance_mm <= self._approach_cm * 10
             if inside_approach and not self._approach_active:
@@ -242,6 +274,10 @@ class UwbApproachEvent(UwbMatterEntity, EventEntity):
                 else None
             ),
             "session_duration_s": round(duration, 1) if duration is not None else None,
+            "approach_started": self._approach_active,
+            "unlock_threshold_crossed": self._unlock_crossed,
+            "unlocked": self._unlocked,
+            "data_status": self._data_status,
         }
 
     def _emit(

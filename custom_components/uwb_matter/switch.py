@@ -8,6 +8,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     BOUND_UNLOCK_ATTRIBUTE_ID,
+    CONF_WRITABLE_CONTROLS,
     CUSTOM_CLUSTER_ID,
     DISTANCE_RELOCK_ATTRIBUTE_ID,
     ULTRAWIDELOCK_RELOCK_ATTRIBUTE_ID,
@@ -22,6 +23,8 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up UltraWideLock switches."""
+    if not entry.data.get(CONF_WRITABLE_CONTROLS, True):
+        return
     async_setup_uwb_entities(
         hass,
         entry,

@@ -13,11 +13,15 @@ from .const import (
     CONF_CREDENTIAL_NAMES,
     CONF_CREDENTIAL_PRESENCE,
     CONF_STALE_TIMEOUT,
+    CONF_WRITABLE_CONTROLS,
     DEFAULT_STALE_TIMEOUT,
     DOMAIN,
 )
 
-PRESENCE_PREFIX = "presence__"
+CONF_CREDENTIAL_ID = "credential_id"
+CONF_FRIENDLY_NAME = "friendly_name"
+CONF_CREATE_PRESENCE = "create_presence_sensor"
+CONF_SETUP_CONFIRMED = "setup_confirmed"
 
 
 class UwbMatterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -34,12 +38,45 @@ class UwbMatterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Create the single integration entry."""
+        """Choose read-only or writable custom-cluster support."""
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
-            return self.async_create_entry(title="UltraWideLock", data={})
-        return self.async_show_form(step_id="user", data_schema=vol.Schema({}))
+            self._writable_controls = bool(
+                user_input[CONF_WRITABLE_CONTROLS]
+            )
+            if self._writable_controls:
+                return await self.async_step_writable_setup()
+            return self.async_create_entry(
+                title="UltraWideLock",
+                data={CONF_WRITABLE_CONTROLS: False},
+            )
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_WRITABLE_CONTROLS, default=False): bool}
+            ),
+        )
+
+    async def async_step_writable_setup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Guide installation of the optional Matter Server schema."""
+        errors = {}
+        if user_input is not None:
+            if user_input[CONF_SETUP_CONFIRMED]:
+                return self.async_create_entry(
+                    title="UltraWideLock",
+                    data={CONF_WRITABLE_CONTROLS: True},
+                )
+            errors[CONF_SETUP_CONFIRMED] = "setup_not_confirmed"
+        return self.async_show_form(
+            step_id="writable_setup",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_SETUP_CONFIRMED, default=False): bool}
+            ),
+            errors=errors,
+        )
 
 
 class UwbMatterOptionsFlow(OptionsFlow):
@@ -48,47 +85,20 @@ class UwbMatterOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show naming and optional presence sensor controls."""
+        """Select a credential to configure and set the stale timeout."""
         credentials = dict(
             self.config_entry.options.get(CONF_CREDENTIAL_NAMES, {})
         )
-        presence = dict(
-            self.config_entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
-        )
         if user_input is not None:
-            names = {
-                credential_id: str(user_input.get(credential_id, "")).strip()
-                for credential_id in credentials
-            }
-            enabled_presence = {
-                credential_id: bool(
-                    user_input.get(f"{PRESENCE_PREFIX}{credential_id}", False)
-                )
-                for credential_id in credentials
-            }
-            disabled = {
-                credential_id
-                for credential_id, was_enabled in presence.items()
-                if was_enabled and not enabled_presence.get(credential_id, False)
-            }
-            if disabled:
-                registry = er.async_get(self.hass)
-                suffixes = tuple(
-                    f"-credential-presence-{credential_id}"
-                    for credential_id in disabled
-                )
-                for entity in er.async_entries_for_config_entry(
-                    registry, self.config_entry.entry_id
-                ):
-                    if entity.unique_id.endswith(suffixes):
-                        registry.async_remove(entity.entity_id)
+            self._stale_timeout = user_input[CONF_STALE_TIMEOUT]
+            if credential_id := user_input.get(CONF_CREDENTIAL_ID):
+                self._credential_id = credential_id
+                return await self.async_step_credential()
             return self.async_create_entry(
                 title="",
                 data={
                     **self.config_entry.options,
-                    CONF_CREDENTIAL_NAMES: names,
-                    CONF_CREDENTIAL_PRESENCE: enabled_presence,
-                    CONF_STALE_TIMEOUT: user_input[CONF_STALE_TIMEOUT],
+                    CONF_STALE_TIMEOUT: self._stale_timeout,
                 },
             )
 
@@ -100,13 +110,64 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 ),
             ): vol.All(vol.Coerce(int), vol.Range(min=3, max=300))
         }
-        for credential_id, name in sorted(credentials.items()):
-            schema_fields[vol.Optional(credential_id, default=name)] = str
-            schema_fields[
-                vol.Optional(
-                    f"{PRESENCE_PREFIX}{credential_id}",
-                    default=bool(presence.get(credential_id, False)),
+        if credentials:
+            labels = {
+                credential_id: (
+                    f"{name} ({credential_id})" if name else credential_id
                 )
-            ] = bool
+                for credential_id, name in sorted(credentials.items())
+            }
+            schema_fields[vol.Required(CONF_CREDENTIAL_ID)] = vol.In(labels)
         schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="init", data_schema=schema)
+
+    async def async_step_credential(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure the name and presence entity for one credential."""
+        credential_id = self._credential_id
+        names = dict(self.config_entry.options.get(CONF_CREDENTIAL_NAMES, {}))
+        presence = dict(
+            self.config_entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
+        )
+        if user_input is not None:
+            names[credential_id] = str(user_input[CONF_FRIENDLY_NAME]).strip()
+            enabled = bool(user_input[CONF_CREATE_PRESENCE])
+            was_enabled = presence.get(credential_id, True)
+            presence[credential_id] = enabled
+            if was_enabled and not enabled:
+                self._remove_presence_entities(credential_id)
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    CONF_CREDENTIAL_NAMES: names,
+                    CONF_CREDENTIAL_PRESENCE: presence,
+                    CONF_STALE_TIMEOUT: self._stale_timeout,
+                },
+            )
+        return self.async_show_form(
+            step_id="credential",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_FRIENDLY_NAME, default=names.get(credential_id, "")
+                    ): str,
+                    vol.Required(
+                        CONF_CREATE_PRESENCE,
+                        default=bool(presence.get(credential_id, True)),
+                    ): bool,
+                }
+            ),
+            description_placeholders={"credential_id": credential_id},
+        )
+
+    def _remove_presence_entities(self, credential_id: str) -> None:
+        """Remove disabled credential-presence entities from the registry."""
+        registry = er.async_get(self.hass)
+        suffix = f"-credential-presence-{credential_id}"
+        for entity in er.async_entries_for_config_entry(
+            registry, self.config_entry.entry_id
+        ):
+            if entity.unique_id.endswith(suffix):
+                registry.async_remove(entity.entity_id)

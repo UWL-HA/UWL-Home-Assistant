@@ -24,7 +24,7 @@ Matter fabric or CASE session.
 | UWB data status | Sensor | Live, stale, or unavailable subscription status |
 | Last UWB update | Sensor | Timestamp of the latest live UWB update |
 | Credential in range | Optional binary sensor | Presence of one selected credential |
-| Approach event | Event | Approach, threshold, lock and session lifecycle events |
+| UWB event | Event | Detection, approach, threshold, lock, session outcome, and data-health events |
 | Approach, unlock and relock distance | Numbers | UWB policy distances in centimetres |
 | Motor time | Number | Local lock motor duration |
 | UltraWideLock unlock/relock | Switches | Allow or prevent automatic local actions |
@@ -37,19 +37,24 @@ Distance writes are validated before they reach Matter. Home Assistant requires
 values when a proposed change would break that order.
 
 Credential IDs are collected automatically. Give them friendly names under
-**Settings > Devices & services > UltraWideLock > Configure**. On the same screen,
-you can optionally create a separate presence sensor for each credential. The
-pseudonymous raw ID remains available as a state attribute.
+**Settings > Devices & services > UltraWideLock > Configure**. Select a credential
+and give it a friendly device name. Every newly detected credential receives a
+standard presence binary sensor by default; this can be disabled on the same
+credential screen. The pseudonymous raw ID remains available as a state
+attribute.
 
 The same configuration screen controls the stale-data timeout (15 seconds by
 default). When an active UWB stream stops updating, its status becomes `stale`
 and the live distance and movement entities are cleared. With no device in range,
 the status is `unavailable`.
 
-The **Approach event** entity emits `approach_started`,
+The **UWB event** entity emits `device_detected`, `approach_started`,
 `unlock_threshold_crossed`, `unlocked`, `approach_aborted`,
-`device_left_range`, and `relocked`. Each event includes the credential name and
-ID, current and minimum distance, and session duration for automations.
+`left_without_unlock`, `left_after_unlock`, `device_left_range`, `relocked`,
+`data_stale`, and `data_restored`. Each event includes the credential name and ID,
+current and minimum distance, and session duration for automations.
+It also reports whether the approach and unlock thresholds were reached, whether
+the UltraWideLock unlocked, and the current UWB data status.
 
 ## Dashboard cards
 
@@ -73,7 +78,8 @@ installing or updating the integration so the bundled cards are loaded.
 2. Add `https://github.com/UWL-HA/UWL-Home-Assistant` as an **Integration**.
 3. Download **UltraWideLock** and restart Home Assistant.
 4. Go to **Settings > Devices & services > Add integration**, search for
-   **UltraWideLock**, and add it once.
+   **UltraWideLock**, and add it once. The setup flow lets you choose read-only
+   operation or guides you through enabling writable custom controls.
 
 ### Manual
 
@@ -84,7 +90,9 @@ Copy `custom_components/uwb_matter` to
 ## Optional writable controls
 
 Reading UWB data needs no additional setup. Writing manufacturer-specific
-settings requires the included Matter Server schema.
+settings requires the included Matter Server schema. New installations are
+guided through these steps directly in the integration setup flow; the commands
+are repeated here for reference.
 
 Run in the **Terminal & SSH** add-on:
 

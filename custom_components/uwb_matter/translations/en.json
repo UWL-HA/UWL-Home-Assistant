@@ -1,15 +1,49 @@
 {
   "config": {
-    "step": {"user": {"title": "UltraWideLock", "description": "Expose lock controls and live UWB data from commissioned UltraWideLock Matter devices."}},
+    "step": {
+      "user": {
+        "title": "UltraWideLock",
+        "description": "Add live UWB data, history, events, and dashboard cards. Reading works without changes to Matter Server. Enable writable controls only if you want to change UltraWideLock-specific distances and action policies from Home Assistant.",
+        "data": {
+          "enable_writable_controls": "Enable writable UltraWideLock controls"
+        },
+        "data_description": {
+          "enable_writable_controls": "Requires installing the bundled custom-cluster schema in the Matter Server add-on. The next step provides instructions."
+        }
+      },
+      "writable_setup": {
+        "title": "Enable writable controls",
+        "description": "Complete these steps before finishing setup:\n\n1. Open the **Terminal & SSH** add-on.\n2. Run `sh /homeassistant/custom_components/uwb_matter/install_matter_schema.sh`.\n3. Open **Settings > Add-ons > Matter Server > Configuration**.\n4. Press the three dots and choose **Edit in YAML**.\n5. Add:\n```yaml\nmatter_server_env_vars:\n  - NODE_OPTIONS=--import=/config/ultrawidelock-cluster.mjs\n```\n6. Save the add-on configuration. Confirm below, finish this integration flow, then restart Matter Server and Home Assistant.",
+        "data": {
+          "setup_confirmed": "I installed the schema and added the Matter Server environment variable"
+        }
+      }
+    },
+    "error": {
+      "setup_not_confirmed": "Complete the Matter Server steps and confirm before continuing."
+    },
     "abort": {"single_instance_allowed": "UltraWideLock is already configured."}
   },
   "options": {
     "step": {
       "init": {
         "title": "Credentials",
-        "description": "Every observed UWB credential is collected automatically. Enter a friendly name and optionally create a separate presence sensor for it. Presence options are shown as presence__ followed by the credential ID.",
+        "description": "Choose a detected credential to name or configure. Each newly detected credential gets its own presence sensor by default.",
         "data": {
-          "stale_timeout_seconds": "Clear stale UWB data after (seconds)"
+          "stale_timeout_seconds": "Clear stale UWB data after (seconds)",
+          "credential_id": "Credential to configure"
+        }
+      },
+      "credential": {
+        "title": "Credential settings",
+        "description": "Configure UWB credential `{credential_id}`. The presence sensor turns on only when this specific credential is in range of the selected UltraWideLock.",
+        "data": {
+          "friendly_name": "Device name",
+          "create_presence_sensor": "Create a presence sensor for this device"
+        },
+        "data_description": {
+          "friendly_name": "For example: Jonathan's iPhone or Apple Watch.",
+          "create_presence_sensor": "Creates a standard Home Assistant presence binary sensor attached to every UltraWideLock that sees this credential."
         }
       }
     }

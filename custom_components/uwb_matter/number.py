@@ -13,6 +13,7 @@ from .const import (
     APPROACH_CM_ATTRIBUTE_ID,
     AUTO_RELOCK_TIME_ATTRIBUTE_ID,
     CUSTOM_CLUSTER_ID,
+    CONF_WRITABLE_CONTROLS,
     DOOR_LOCK_CLUSTER_ID,
     ENDPOINT_ID,
     MOTOR_MS_ATTRIBUTE_ID,
@@ -35,18 +36,19 @@ async def async_setup_entry(
         ((DOOR_LOCK_CLUSTER_ID, AUTO_RELOCK_TIME_ATTRIBUTE_ID),),
         UwbAutoRelockTimeNumber,
     )
-    async_setup_uwb_entities(
-        hass,
-        entry,
-        async_add_entities,
-        (
-            (CUSTOM_CLUSTER_ID, UNLOCK_THRESHOLD_CM_ATTRIBUTE_ID),
-            (CUSTOM_CLUSTER_ID, APPROACH_CM_ATTRIBUTE_ID),
-            (CUSTOM_CLUSTER_ID, RELOCK_CM_ATTRIBUTE_ID),
-            (CUSTOM_CLUSTER_ID, MOTOR_MS_ATTRIBUTE_ID),
-        ),
-        _uwb_config_number_factory,
-    )
+    if entry.data.get(CONF_WRITABLE_CONTROLS, True):
+        async_setup_uwb_entities(
+            hass,
+            entry,
+            async_add_entities,
+            (
+                (CUSTOM_CLUSTER_ID, UNLOCK_THRESHOLD_CM_ATTRIBUTE_ID),
+                (CUSTOM_CLUSTER_ID, APPROACH_CM_ATTRIBUTE_ID),
+                (CUSTOM_CLUSTER_ID, RELOCK_CM_ATTRIBUTE_ID),
+                (CUSTOM_CLUSTER_ID, MOTOR_MS_ATTRIBUTE_ID),
+            ),
+            _uwb_config_number_factory,
+        )
 
 
 def _uwb_config_number_factory(

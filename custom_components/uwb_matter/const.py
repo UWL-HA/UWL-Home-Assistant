@@ -6,6 +6,7 @@ DOMAIN = "uwb_matter"
 CONF_CREDENTIAL_NAMES = "credential_names"
 CONF_CREDENTIAL_PRESENCE = "credential_presence"
 CONF_STALE_TIMEOUT = "stale_timeout_seconds"
+CONF_WRITABLE_CONTROLS = "enable_writable_controls"
 DEFAULT_STALE_TIMEOUT = 15
 ENDPOINT_ID = 1
 CUSTOM_CLUSTER_ID = 0xFFF1FC10

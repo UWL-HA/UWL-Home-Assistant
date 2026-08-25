@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CREDENTIAL_NAMES,
+    CONF_CREDENTIAL_PRESENCE,
     CREDENTIAL_ID_ATTRIBUTE_ID,
     CUSTOM_CLUSTER_ID,
     DEVICE_IN_RANGE_ATTRIBUTE_ID,
@@ -272,9 +273,17 @@ class UwbCredentialIdSensor(UwbMatterEntity, SensorEntity):
         if credential_id in names:
             return
         names[credential_id] = ""
+        presence = dict(
+            entry.options.get(CONF_CREDENTIAL_PRESENCE, {})
+        )
+        presence[credential_id] = True
         self._hass.config_entries.async_update_entry(
             entry,
-            options={**entry.options, CONF_CREDENTIAL_NAMES: names},
+            options={
+                **entry.options,
+                CONF_CREDENTIAL_NAMES: names,
+                CONF_CREDENTIAL_PRESENCE: presence,
+            },
         )
 
     @property
