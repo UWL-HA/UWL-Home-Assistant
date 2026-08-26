@@ -207,20 +207,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
                     },
                 ]
                 try:
-                    actual_acl = await self._write_acl(target_node, updated_acl)
-                    if not self._target_acl_allows(
-                        actual_acl, self._binding_source, target_endpoint
-                    ):
-                        raise ValueError("Required Matter ACL entry is absent")
+                    await self._write_acl(target_node, updated_acl)
                 except Exception:  # noqa: BLE001
                     try:
-                        restored = await self._write_acl(
-                            target_node, self._acl_backup
-                        )
-                        if any(
-                            entry not in restored for entry in self._acl_backup
-                        ):
-                            raise ValueError("Matter ACL rollback verification failed")
+                        await self._write_acl(target_node, self._acl_backup)
                     except Exception:  # noqa: BLE001
                         return self.async_abort(reason="acl_rollback_failed")
                     errors["base"] = "acl_write_failed"
@@ -258,11 +248,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
             except Exception:  # noqa: BLE001
                 if acl_rollback is not None:
                     try:
-                        restored = await self._write_acl(
-                            target_node, acl_rollback
-                        )
-                        if any(entry not in restored for entry in acl_rollback):
-                            raise ValueError("Matter ACL rollback verification failed")
+                        await self._write_acl(target_node, acl_rollback)
                     except Exception:  # noqa: BLE001
                         return self.async_abort(reason="acl_rollback_failed")
                 return self.async_abort(reason="binding_write_failed")
@@ -359,16 +345,25 @@ class UwbMatterOptionsFlow(OptionsFlow):
 
     async def _write_acl(
         self, target_node: int, acl: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Replace and return this fabric's ACL on the target lock."""
+    ) -> None:
+        """Replace this fabric's ACL and validate the Matter write status."""
         client = get_matter(self.hass).matter_client
         if callable(method := getattr(client, "set_acl_entry", None)):
-            await method(target_node, acl)
+            result = await method(target_node, acl)
         else:
-            await client.send_command(
+            result = await client.send_command(
                 APICommand.SET_ACL_ENTRY, node_id=target_node, entry=acl
             )
-        return await self._current_acl(target_node)
+        if isinstance(result, list):
+            for item in result:
+                status = (
+                    item.get("status")
+                    if isinstance(item, dict)
+                    else getattr(item, "status", None)
+                )
+                if status not in (None, 0):
+                    raise ValueError(f"Matter ACL write failed with status {status}")
+        await self._current_acl(target_node)
 
     def _target_acl_allows(
         self, acl: list[dict[str, Any]], source_node: int, endpoint: int
