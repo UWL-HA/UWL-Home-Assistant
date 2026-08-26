@@ -69,16 +69,16 @@ def normalized_acl(value: object) -> list[dict[str, Any]]:
         subjects = field(item, "subjects")
         normalized_subjects = None
         if isinstance(subjects, list):
-            normalized_subjects = [
-                int(subject)
-                if isinstance(subject, str) and subject.isdecimal()
-                else subject
-                for subject in subjects
-            ]
+            normalized_subjects = []
+            for subject in subjects:
+                normalized = _integer(subject)
+                normalized_subjects.append(
+                    normalized if normalized is not None else subject
+                )
         result.append(
             {
-                "privilege": field(item, "privilege"),
-                "auth_mode": field(item, "authMode"),
+                "privilege": _integer(field(item, "privilege")),
+                "auth_mode": _integer(field(item, "authMode")),
                 "subjects": normalized_subjects,
                 "targets": normalized_targets,
             }
@@ -92,7 +92,19 @@ def _acl_target_field(target: object, name: str, field_id: int) -> int | None:
         value = target.get(name, target.get(str(field_id), target.get(field_id)))
     else:
         value = getattr(target, name, None)
-    return value if isinstance(value, int) else None
+    return _integer(value)
+
+
+def _integer(value: object) -> int | None:
+    """Normalize an integer transported as either JSON number or string."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
 
 
 def normalized_bindings(value: object) -> list[dict[str, int | None]]:
