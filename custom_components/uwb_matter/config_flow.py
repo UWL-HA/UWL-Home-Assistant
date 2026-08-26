@@ -167,9 +167,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
             if not self._target_acl_allows(target_node, self._binding_source):
                 errors["base"] = "binding_acl_missing"
             else:
-                bindings = self._current_bindings()
+                bindings = await self._current_bindings()
                 candidate = {
                     "node": target_node,
+                    "group": None,
                     "endpoint": target_endpoint,
                     "cluster": DOOR_LOCK_CLUSTER_ID,
                 }
@@ -196,7 +197,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Remove one Door Lock binding while preserving all other entries."""
         registry = er.async_get(self.hass)
-        current = self._current_bindings()
+        current = await self._current_bindings()
         locks = door_lock_bindings(current)
         choices = {
             target_key(item["node"], item["endpoint"]): matter_lock_name(
@@ -236,14 +237,17 @@ class UwbMatterOptionsFlow(OptionsFlow):
             errors=errors,
         )
 
-    def _current_bindings(self) -> list[dict[str, int]]:
+    async def _current_bindings(self) -> list[dict[str, int | None]]:
         """Read the source node's complete current binding table."""
-        node = get_matter(self.hass).matter_client.get_node(self._binding_source)
-        return normalized_bindings(
-            node.node_data.attributes.get(binding_path(ENDPOINT_ID))
+        path = binding_path(ENDPOINT_ID)
+        values = await get_matter(self.hass).matter_client.read_attribute(
+            self._binding_source, path
         )
+        return normalized_bindings(values.get(path))
 
-    async def _write_bindings(self, bindings: list[dict[str, int]]) -> None:
+    async def _write_bindings(
+        self, bindings: list[dict[str, int | None]]
+    ) -> None:
         """Replace the source binding table through Matter Server's safe API."""
         client = get_matter(self.hass).matter_client
         if callable(method := getattr(client, "set_node_binding", None)):
