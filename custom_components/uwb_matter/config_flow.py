@@ -240,10 +240,15 @@ class UwbMatterOptionsFlow(OptionsFlow):
     async def _current_bindings(self) -> list[dict[str, int | None]]:
         """Read the source node's complete current binding table."""
         path = binding_path(ENDPOINT_ID)
-        values = await get_matter(self.hass).matter_client.read_attribute(
-            self._binding_source, path
-        )
-        return normalized_bindings(values.get(path))
+        client = get_matter(self.hass).matter_client
+        values = await client.read_attribute(self._binding_source, path)
+        value = values.get(path)
+        node = client.get_node(self._binding_source)
+        if callable(update := getattr(node, "update_attribute", None)):
+            update(path, value)
+        else:
+            node.node_data.attributes[path] = value
+        return normalized_bindings(value)
 
     async def _write_bindings(
         self, bindings: list[dict[str, int | None]]
@@ -259,8 +264,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 endpoint=ENDPOINT_ID,
                 bindings=bindings,
             )
-        await client.read_attribute(
-            self._binding_source, binding_path(ENDPOINT_ID)
+        await self._current_bindings()
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(self.config_entry.entry_id),
+            "reload UltraWideLock after binding change",
         )
 
     def _target_acl_allows(self, target_node: int, source_node: int) -> bool:
