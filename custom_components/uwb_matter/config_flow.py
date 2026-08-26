@@ -248,12 +248,15 @@ class UwbMatterOptionsFlow(OptionsFlow):
         client = get_matter(self.hass).matter_client
         if callable(method := getattr(client, "set_node_binding", None)):
             await method(self._binding_source, ENDPOINT_ID, bindings)
-            return
-        await client.send_command(
-            APICommand.SET_NODE_BINDING,
-            node_id=self._binding_source,
-            endpoint=ENDPOINT_ID,
-            bindings=bindings,
+        else:
+            await client.send_command(
+                APICommand.SET_NODE_BINDING,
+                node_id=self._binding_source,
+                endpoint=ENDPOINT_ID,
+                bindings=bindings,
+            )
+        await client.refresh_attribute(
+            self._binding_source, binding_path(ENDPOINT_ID)
         )
 
     def _target_acl_allows(self, target_node: int, source_node: int) -> bool:
