@@ -318,15 +318,27 @@ class UwbMatterOptionsFlow(OptionsFlow):
         """Replace the source binding table through Matter Server's safe API."""
         client = get_matter(self.hass).matter_client
         if callable(method := getattr(client, "set_node_binding", None)):
-            await method(self._binding_source, ENDPOINT_ID, bindings)
+            result = await method(self._binding_source, ENDPOINT_ID, bindings)
         else:
-            await client.send_command(
+            result = await client.send_command(
                 APICommand.SET_NODE_BINDING,
                 node_id=self._binding_source,
                 endpoint=ENDPOINT_ID,
                 bindings=bindings,
             )
-        await self._current_bindings()
+        if isinstance(result, list):
+            for item in result:
+                status = (
+                    item.get("status")
+                    if isinstance(item, dict)
+                    else getattr(item, "status", None)
+                )
+                if status not in (None, 0):
+                    raise ValueError(
+                        f"Matter binding write failed with status {status}"
+                    )
+        path = binding_path(ENDPOINT_ID)
+        client.get_node(self._binding_source).node_data.attributes[path] = bindings
         self.hass.async_create_task(
             self.hass.config_entries.async_reload(self.config_entry.entry_id),
             "reload UltraWideLock after binding change",
