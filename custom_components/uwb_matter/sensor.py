@@ -4,6 +4,7 @@ from datetime import datetime
 from time import monotonic
 
 from homeassistant.components import persistent_notification
+from homeassistant.components.matter.helpers import get_matter
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -18,7 +19,7 @@ from homeassistant.util import dt as dt_util
 from matter_server.common.helpers.util import create_attribute_path
 from matter_server.common.models import EventType, MatterNodeEvent
 
-from .binding import door_lock_bindings, matter_lock_name
+from .binding import door_lock_bindings, matter_lock_info
 from .const import (
     BINDING_ATTRIBUTE_ID,
     BINDING_CLUSTER_ID,
@@ -80,6 +81,7 @@ async def async_setup_entry(
         ((BINDING_CLUSTER_ID, BINDING_ATTRIBUTE_ID),),
         UwbBoundLocksSensor,
     )
+    _async_setup_bound_lock_details(hass, entry, async_add_entities)
     async_setup_uwb_entities(
         hass,
         entry,
@@ -271,8 +273,8 @@ class UwbBoundLocksSensor(UwbMatterEntity, SensorEntity):
         if not bindings:
             return "None"
         registry = er.async_get(self._hass)
-        names = [
-            matter_lock_name(
+        targets = [
+            matter_lock_info(
                 self._hass,
                 registry,
                 target["node"],
@@ -280,26 +282,113 @@ class UwbBoundLocksSensor(UwbMatterEntity, SensorEntity):
             )
             for target in bindings
         ]
-        return names[0] if len(names) == 1 else f"{len(names)} locks"
+        return targets[0]["name"] if len(targets) == 1 else f"{len(targets)} locks"
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         """Expose every resolved binding target."""
         bindings = door_lock_bindings(self._value)
+        if not bindings:
+            return {}
         registry = er.async_get(self._hass)
         targets = [
-            {
-                **target,
-                "name": matter_lock_name(
-                    self._hass,
-                    registry,
-                    target["node"],
-                    target["endpoint"],
-                ),
-            }
+            matter_lock_info(
+                self._hass,
+                registry,
+                target["node"],
+                target["endpoint"],
+            )
             for target in bindings
         ]
         return {"bindings": targets, "count": len(targets)}
+
+
+def _async_setup_bound_lock_details(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Add separate details only for nodes that actually have a bound lock."""
+    matter = get_matter(hass)
+    binding_path = create_attribute_path(
+        ENDPOINT_ID, BINDING_CLUSTER_ID, BINDING_ATTRIBUTE_ID
+    )
+    presence_path = create_attribute_path(
+        ENDPOINT_ID, CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID
+    )
+    entities: list[UwbMatterEntity] = []
+    for node in matter.matter_client.get_nodes():
+        if presence_path not in node.node_data.attributes:
+            continue
+        value = node.node_data.attributes.get(binding_path)
+        if not door_lock_bindings(value):
+            continue
+        for entity_class in (
+            UwbBoundLockEntitySensor,
+            UwbBoundLockNodeSensor,
+            UwbBoundLockEndpointSensor,
+        ):
+            entity = entity_class(
+                hass,
+                node.node_id,
+                BINDING_CLUSTER_ID,
+                BINDING_ATTRIBUTE_ID,
+            )
+            entity._config_entry = entry
+            entities.append(entity)
+    if entities:
+        async_add_entities(entities)
+
+
+class UwbBoundLockDetailSensor(UwbMatterEntity, SensorEntity):
+    """Base for a detail from the current Door Lock bindings."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _detail_key: str
+
+    def __init__(
+        self, hass: HomeAssistant, node_id: int, cluster_id: int, attribute_id: int
+    ) -> None:
+        super().__init__(hass, node_id, cluster_id, attribute_id)
+        self._attr_unique_id = f"{self._attr_unique_id}-bound-{self._detail_key}"
+
+    @property
+    def native_value(self) -> str | int | None:
+        """Return one detail for a single bound lock."""
+        bindings = door_lock_bindings(self._value)
+        if len(bindings) != 1:
+            return None
+        target = bindings[0]
+        if self._detail_key in ("node", "endpoint"):
+            return target[self._detail_key]
+        info = matter_lock_info(
+            self._hass,
+            er.async_get(self._hass),
+            target["node"],
+            target["endpoint"],
+        )
+        return info["entity_id"]
+
+
+class UwbBoundLockEntitySensor(UwbBoundLockDetailSensor):
+    """Home Assistant entity belonging to the bound lock."""
+
+    _attr_name = "Bound lock entity"
+    _detail_key = "entity_id"
+
+
+class UwbBoundLockNodeSensor(UwbBoundLockDetailSensor):
+    """Matter node ID of the bound lock."""
+
+    _attr_name = "Bound lock Matter node"
+    _detail_key = "node"
+
+
+class UwbBoundLockEndpointSensor(UwbBoundLockDetailSensor):
+    """Matter endpoint of the bound lock."""
+
+    _attr_name = "Bound lock endpoint"
+    _detail_key = "endpoint"
 
 
 class UwbCredentialIdSensor(UwbMatterEntity, SensorEntity):

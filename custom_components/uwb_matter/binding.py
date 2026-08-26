@@ -114,6 +114,17 @@ def matter_lock_name(
     fallback: str | None = None,
 ) -> str:
     """Resolve a Matter lock endpoint to its Home Assistant friendly name."""
+    return matter_lock_info(hass, registry, node_id, endpoint, fallback)["name"]
+
+
+def matter_lock_info(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    node_id: int,
+    endpoint: int,
+    fallback: str | None = None,
+) -> dict[str, str | int | None]:
+    """Resolve identifying details for one Matter lock endpoint."""
     needle = f"-{node_id:016X}-MatterNodeDevice-{endpoint}-"
     for entity in registry.entities.values():
         if (
@@ -122,5 +133,19 @@ def matter_lock_name(
             and needle in entity.unique_id
         ):
             state = hass.states.get(entity.entity_id)
-            return entity.name or (state.name if state else None) or entity.entity_id
-    return fallback or f"Matter node {node_id}, endpoint {endpoint}"
+            return {
+                "name": entity.name
+                or (state.name if state else None)
+                or entity.entity_id,
+                "entity_id": entity.entity_id,
+                "node": node_id,
+                "endpoint": endpoint,
+                "cluster": "Door Lock (0x0101)",
+            }
+    return {
+        "name": fallback or f"Matter node {node_id}, endpoint {endpoint}",
+        "entity_id": None,
+        "node": node_id,
+        "endpoint": endpoint,
+        "cluster": "Door Lock (0x0101)",
+    }
