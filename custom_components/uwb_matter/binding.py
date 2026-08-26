@@ -67,11 +67,19 @@ def normalized_acl(value: object) -> list[dict[str, Any]]:
                     }
                 )
         subjects = field(item, "subjects")
+        normalized_subjects = None
+        if isinstance(subjects, list):
+            normalized_subjects = [
+                int(subject)
+                if isinstance(subject, str) and subject.isdecimal()
+                else subject
+                for subject in subjects
+            ]
         result.append(
             {
                 "privilege": field(item, "privilege"),
                 "auth_mode": field(item, "authMode"),
-                "subjects": subjects if isinstance(subjects, list) else None,
+                "subjects": normalized_subjects,
                 "targets": normalized_targets,
             }
         )
