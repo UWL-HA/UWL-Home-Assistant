@@ -55,6 +55,11 @@ The separate **UWB data freshness** configuration controls the stale-data timeou
 becomes `stale` and the live distance and movement entities are cleared. With no
 device in range, the status is `unavailable`.
 
+Under **Configure > Matter lock binding**, select an UltraWideLock to add or
+remove a standard Matter Door Lock binding. Existing unrelated binding entries
+are preserved. The integration verifies that the target ACL already grants the
+UltraWideLock node CASE Operate access and never rewrites ACLs automatically.
+
 The **UWB event** entity emits `device_detected`, `approach_started`,
 `unlock_threshold_crossed`, `unlocked`, `approach_aborted`,
 `left_without_unlock`, `left_after_unlock`, `device_left_range`, `relocked`,
