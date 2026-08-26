@@ -57,8 +57,19 @@ device in range, the status is `unavailable`.
 
 Under **Configure > Matter lock binding**, select an UltraWideLock to add or
 remove a standard Matter Door Lock binding. Existing unrelated binding entries
-are preserved. The integration verifies that the target ACL already grants the
-UltraWideLock node CASE Operate access and never rewrites ACLs automatically.
+are preserved. In the experimental binding-management beta, a missing permission
+can be added as a narrowly scoped CASE Operate ACL entry. Before writing, the
+flow displays the complete fabric-filtered original ACL and requires the user to
+copy it. It rechecks that the ACL has not changed, preserves a CASE administrator,
+verifies the complete written table, and rolls back if binding creation fails.
+A persistent Home Assistant notification also retains the recovery copy.
+
+If an ACL change goes wrong, keep every still-working Matter administrator in
+place. Use another administrator on the same fabric to restore the complete
+saved ACL, then interview the lock again in the Matter Server app. If no Matter
+administrator can reach the lock, factory-resetting and commissioning that lock
+again is the last-resort recovery path. This experimental ACL management is not
+present in the stable branch.
 
 The **UWB event** entity emits `device_detected`, `approach_started`,
 `unlock_threshold_crossed`, `unlocked`, `approach_aborted`,

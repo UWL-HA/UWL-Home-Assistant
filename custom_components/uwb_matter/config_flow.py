@@ -1,5 +1,7 @@
 """Config flow for UltraWideLock Matter sensors."""
 
+import json
+
 from typing import Any
 
 import voluptuous as vol
@@ -45,6 +47,7 @@ CONF_SOURCE_LOCK = "source_lock"
 CONF_TARGET_LOCK = "target_lock"
 CONF_BINDING_TO_REMOVE = "binding_to_remove"
 CONF_CONFIRM_ACL_RISK = "confirm_acl_risk"
+CONF_ACL_BACKUP_SAVED = "acl_backup_saved"
 
 
 class UwbMatterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -165,7 +168,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
             target_node, target_endpoint = parse_target_key(
                 user_input[CONF_TARGET_LOCK]
             )
-            acl = await self._current_acl(target_node)
+            try:
+                acl = await self._current_acl(target_node)
+            except Exception:  # noqa: BLE001
+                return self.async_abort(reason="acl_read_failed")
             if not self._target_acl_allows(
                 acl, self._binding_source, target_endpoint
             ):
@@ -187,10 +193,20 @@ class UwbMatterOptionsFlow(OptionsFlow):
         """Warn before granting the UltraWideLock access to a target lock."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input[CONF_CONFIRM_ACL_RISK]:
+            if not user_input[CONF_ACL_BACKUP_SAVED]:
+                errors[CONF_ACL_BACKUP_SAVED] = "acl_backup_not_saved"
+            elif not user_input[CONF_CONFIRM_ACL_RISK]:
                 errors[CONF_CONFIRM_ACL_RISK] = "acl_risk_not_confirmed"
             else:
                 target_node, target_endpoint = self._acl_target
+                try:
+                    current_acl = await self._current_acl(target_node)
+                except Exception:  # noqa: BLE001
+                    return self.async_abort(reason="acl_read_failed")
+                if self._acl_signature(current_acl) != self._acl_signature(
+                    self._acl_backup
+                ):
+                    return self.async_abort(reason="acl_changed")
                 updated_acl = [
                     *self._acl_backup,
                     {
@@ -206,6 +222,9 @@ class UwbMatterOptionsFlow(OptionsFlow):
                         ],
                     },
                 ]
+                self._create_acl_recovery_notification(
+                    target_node, self._acl_backup
+                )
                 try:
                     await self._write_acl(target_node, updated_acl)
                 except Exception:  # noqa: BLE001
@@ -222,9 +241,34 @@ class UwbMatterOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="confirm_acl",
             data_schema=vol.Schema(
-                {vol.Required(CONF_CONFIRM_ACL_RISK, default=False): bool}
+                {
+                    vol.Required(CONF_ACL_BACKUP_SAVED, default=False): bool,
+                    vol.Required(CONF_CONFIRM_ACL_RISK, default=False): bool,
+                }
             ),
             errors=errors,
+            description_placeholders={
+                "target_node": str(self._acl_target[0]),
+                "acl_backup": json.dumps(self._acl_backup, indent=2),
+            },
+        )
+
+    def _create_acl_recovery_notification(
+        self, target_node: int, acl: list[dict[str, Any]]
+    ) -> None:
+        """Persist the pre-write ACL and recovery guidance outside the flow."""
+        persistent_notification.async_create(
+            self.hass,
+            "The UltraWideLock integration is about to change this lock's "
+            "Matter ACL. Keep this original ACL until the binding has been "
+            "tested:\n\n```json\n"
+            f"{json.dumps(acl, indent=2)}"
+            "\n```\n\nIf access is lost, restore this complete ACL through another "
+            "Matter administrator on the same fabric. If no administrator "
+            "can reach the lock, factory-reset the lock and commission it "
+            "again as a last resort.",
+            title=f"Matter ACL backup for node {target_node}",
+            notification_id=f"uwb_matter_acl_backup_{target_node}",
         )
 
     async def _finish_add_binding(
@@ -353,7 +397,15 @@ class UwbMatterOptionsFlow(OptionsFlow):
             attribute_path=path,
             fabric_filtered=True,
         )
-        return normalized_acl(values.get(path))
+        acl = normalized_acl(values.get(path))
+        if not acl or not any(
+            entry.get("privilege") == 5
+            and entry.get("auth_mode") == 2
+            and entry.get("subjects")
+            for entry in acl
+        ):
+            raise ValueError("ACL has no visible CASE administrator entry")
+        return acl
 
     async def _write_acl(
         self, target_node: int, acl: list[dict[str, Any]]
@@ -375,7 +427,16 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 )
                 if status not in (None, 0):
                     raise ValueError(f"Matter ACL write failed with status {status}")
-        await self._current_acl(target_node)
+        actual = self._acl_signature(await self._current_acl(target_node))
+        if actual != self._acl_signature(acl):
+            raise ValueError(
+                "Matter ACL verification did not match the requested table"
+            )
+
+    @staticmethod
+    def _acl_signature(acl: list[dict[str, Any]]) -> list[str]:
+        """Return an order-independent, exact signature for an ACL table."""
+        return sorted(json.dumps(entry, sort_keys=True) for entry in acl)
 
     def _target_acl_allows(
         self, acl: list[dict[str, Any]], source_node: int, endpoint: int
