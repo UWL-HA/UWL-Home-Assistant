@@ -46,23 +46,22 @@ def field(binding: object, name: str) -> Any:
     return getattr(binding, name, None)
 
 
-def normalized_bindings(value: object) -> list[dict[str, int]]:
+def normalized_bindings(value: object) -> list[dict[str, int | None]]:
     """Convert cached bindings to values accepted by Matter Server."""
     if not isinstance(value, list):
         return []
-    result: list[dict[str, int]] = []
+    result: list[dict[str, int | None]] = []
     for item in value:
-        target = {
-            key: item_value
-            for key in ("node", "group", "endpoint", "cluster")
-            if isinstance((item_value := field(item, key)), int)
-        }
-        if target:
+        target: dict[str, int | None] = {}
+        for key in ("node", "group", "endpoint", "cluster"):
+            item_value = field(item, key)
+            target[key] = item_value if isinstance(item_value, int) else None
+        if target["node"] is not None or target["group"] is not None:
             result.append(target)
     return result
 
 
-def door_lock_bindings(value: object) -> list[dict[str, int]]:
+def door_lock_bindings(value: object) -> list[dict[str, int | None]]:
     """Return unicast Door Lock targets only."""
     return [
         item
