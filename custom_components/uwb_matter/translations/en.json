@@ -63,8 +63,18 @@
       },
       "remove_binding": {
         "title": "Remove a bound lock",
-        "description": "Only the selected Door Lock binding is removed. Other bindings remain unchanged.",
+        "description": "Choose the Door Lock binding to remove. On the next screen you can also restore the target lock's ACL permission.",
         "data": {"binding_to_remove": "Bound lock"}
+      },
+      "confirm_remove_binding": {
+        "title": "Remove bound lock",
+        "description": "Removing the binding stops this UltraWideLock from targeting the selected lock. By default, the integration also restores the original ACL permission state by removing only the exact CASE Operate entry for this UltraWideLock, Door Lock cluster, and endpoint. Every unrelated ACL entry is preserved and the complete result is verified.\n\nTurn this option off if you deliberately want the UltraWideLock to retain Matter permission to operate the target lock after the binding is removed.",
+        "data": {
+          "restore_binding_acl": "Restore the original ACL permission state"
+        },
+        "data_description": {
+          "restore_binding_acl": "Recommended. Removes the narrowly scoped Door Lock permission together with the binding. If disabled, the binding is removed but the ACL permission remains."
+        }
       },
       "data_freshness": {
         "title": "UWB data freshness",
@@ -110,7 +120,10 @@
       "binding_write_failed": "Matter Server could not create the binding. Any ACL change made by this flow was restored.",
       "acl_rollback_failed": "Creating the binding failed and the original ACL could not be restored automatically. Check the target lock ACL in Matter Server immediately; another Matter administrator or a factory reset may be required.",
       "acl_changed": "The target lock ACL changed after the backup was displayed. Nothing was written. Start the binding flow again to review and copy the current ACL.",
-      "acl_read_failed": "The target lock ACL could not be read safely or has no visible CASE administrator. Nothing was written."
+      "acl_read_failed": "The target lock ACL could not be read safely or has no visible CASE administrator. Nothing was written.",
+      "binding_acl_not_found": "The exact narrowly scoped Door Lock ACL entry could not be found, so the integration did not remove the binding or change any ACL entry. Review the target lock ACL before trying again.",
+      "binding_remove_failed": "The binding or ACL removal failed verification. The integration restored the previous binding table and ACL.",
+      "binding_remove_rollback_failed": "Removing the binding or ACL failed and the previous state could not be fully restored. Check both the UltraWideLock binding table and the target lock ACL in Matter Server immediately."
     }
   }
 }

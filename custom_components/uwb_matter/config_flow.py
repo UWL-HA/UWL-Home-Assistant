@@ -46,6 +46,8 @@ CONF_SETUP_CONFIRMED = "setup_confirmed"
 CONF_SOURCE_LOCK = "source_lock"
 CONF_TARGET_LOCK = "target_lock"
 CONF_BINDING_TO_REMOVE = "binding_to_remove"
+CONF_RESTORE_BINDING_ACL = "restore_binding_acl"
+CONF_BINDING_ACL_BACKUPS = "binding_acl_backups"
 CONF_CONFIRM_ACL_RISK = "confirm_acl_risk"
 CONF_ACL_BACKUP_SAVED = "acl_backup_saved"
 
@@ -296,7 +298,12 @@ class UwbMatterOptionsFlow(OptionsFlow):
                     except Exception:  # noqa: BLE001
                         return self.async_abort(reason="acl_rollback_failed")
                 return self.async_abort(reason="binding_write_failed")
-        return self.async_create_entry(title="", data=self.config_entry.options)
+        options = dict(self.config_entry.options)
+        if acl_rollback is not None:
+            backups = dict(options.get(CONF_BINDING_ACL_BACKUPS, {}))
+            backups[self._acl_backup_key(target_node, target_endpoint)] = acl_rollback
+            options[CONF_BINDING_ACL_BACKUPS] = backups
+        return self.async_create_entry(title="", data=options)
 
     async def async_step_remove_binding(
         self, user_input: dict[str, Any] | None = None
@@ -315,26 +322,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
             return self.async_abort(reason="no_door_lock_bindings")
         errors: dict[str, str] = {}
         if user_input is not None:
-            node_id, endpoint = parse_target_key(
+            self._binding_to_remove = parse_target_key(
                 user_input[CONF_BINDING_TO_REMOVE]
             )
-            updated = [
-                item
-                for item in current
-                if not (
-                    item.get("node") == node_id
-                    and item.get("endpoint") == endpoint
-                    and item.get("cluster") == DOOR_LOCK_CLUSTER_ID
-                )
-            ]
-            try:
-                await self._write_bindings(updated)
-            except Exception:  # noqa: BLE001
-                errors["base"] = "binding_write_failed"
-            if not errors:
-                return self.async_create_entry(
-                    title="", data=self.config_entry.options
-                )
+            return await self.async_step_confirm_remove_binding()
         return self.async_show_form(
             step_id="remove_binding",
             data_schema=vol.Schema(
@@ -342,6 +333,117 @@ class UwbMatterOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_confirm_remove_binding(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Remove a binding and optionally its narrowly scoped ACL entry."""
+        node_id, endpoint = self._binding_to_remove
+        if user_input is not None:
+            restore_acl = user_input[CONF_RESTORE_BINDING_ACL]
+            bindings_before = await self._current_bindings()
+            bindings_after = [
+                item
+                for item in bindings_before
+                if not (
+                    item.get("node") == node_id
+                    and item.get("endpoint") == endpoint
+                    and item.get("cluster") == DOOR_LOCK_CLUSTER_ID
+                )
+            ]
+            acl_before = None
+            acl_after = None
+            if restore_acl:
+                try:
+                    acl_before = await self._current_acl(node_id)
+                except Exception:  # noqa: BLE001
+                    return self.async_abort(reason="acl_read_failed")
+                acl_after = self._acl_without_binding_permission(
+                    acl_before, self._binding_source, endpoint
+                )
+                if self._acl_signature(acl_after) == self._acl_signature(
+                    acl_before
+                ):
+                    if self._target_acl_allows(
+                        acl_before, self._binding_source, endpoint
+                    ):
+                        return self.async_abort(reason="binding_acl_not_found")
+                    acl_after = None
+                saved_backup = self.config_entry.options.get(
+                    CONF_BINDING_ACL_BACKUPS, {}
+                ).get(self._acl_backup_key(node_id, endpoint))
+                if (
+                    acl_after is not None
+                    and isinstance(saved_backup, list)
+                    and self._acl_signature(acl_after)
+                    == self._acl_signature(saved_backup)
+                ):
+                    acl_after = saved_backup
+            try:
+                await self._write_bindings(bindings_after, reload=False)
+                if acl_after is not None:
+                    await self._write_acl(node_id, acl_after)
+            except Exception:  # noqa: BLE001
+                rollback_failed = False
+                if acl_before is not None:
+                    try:
+                        await self._write_acl(node_id, acl_before)
+                    except Exception:  # noqa: BLE001
+                        rollback_failed = True
+                try:
+                    await self._write_bindings(bindings_before, reload=False)
+                except Exception:  # noqa: BLE001
+                    rollback_failed = True
+                self._schedule_reload_after_binding_change()
+                return self.async_abort(
+                    reason=(
+                        "binding_remove_rollback_failed"
+                        if rollback_failed
+                        else "binding_remove_failed"
+                    )
+                )
+            options = dict(self.config_entry.options)
+            backups = dict(options.get(CONF_BINDING_ACL_BACKUPS, {}))
+            backups.pop(self._acl_backup_key(node_id, endpoint), None)
+            if backups:
+                options[CONF_BINDING_ACL_BACKUPS] = backups
+            else:
+                options.pop(CONF_BINDING_ACL_BACKUPS, None)
+            self._schedule_reload_after_binding_change()
+            return self.async_create_entry(title="", data=options)
+        return self.async_show_form(
+            step_id="confirm_remove_binding",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_RESTORE_BINDING_ACL, default=True): bool}
+            ),
+        )
+
+    def _acl_backup_key(self, target_node: int, endpoint: int) -> str:
+        """Return the options key for one binding's original target ACL."""
+        return f"{self._binding_source}:{target_node}:{endpoint}"
+
+    @staticmethod
+    def _acl_without_binding_permission(
+        acl: list[dict[str, Any]], source_node: int, endpoint: int
+    ) -> list[dict[str, Any]]:
+        """Remove only the exact ACL entry created for a Door Lock binding."""
+        expected_targets = [
+            {
+                "cluster": DOOR_LOCK_CLUSTER_ID,
+                "endpoint": endpoint,
+                "device_type": None,
+            }
+        ]
+        return [
+            entry
+            for entry in acl
+            if not (
+                entry.get("privilege") == 3
+                and entry.get("auth_mode") == 2
+                and entry.get("subjects") == [source_node]
+                and entry.get("targets") == expected_targets
+            )
+        ]
 
     async def _current_bindings(self) -> list[dict[str, int | None]]:
         """Read the source node's complete current binding table."""
@@ -357,7 +459,10 @@ class UwbMatterOptionsFlow(OptionsFlow):
         return normalized_bindings(value)
 
     async def _write_bindings(
-        self, bindings: list[dict[str, int | None]]
+        self,
+        bindings: list[dict[str, int | None]],
+        *,
+        reload: bool = True,
     ) -> None:
         """Replace the source binding table through Matter Server's safe API."""
         client = get_matter(self.hass).matter_client
@@ -383,6 +488,11 @@ class UwbMatterOptionsFlow(OptionsFlow):
                     )
         path = binding_path(ENDPOINT_ID)
         client.get_node(self._binding_source).node_data.attributes[path] = bindings
+        if reload:
+            self._schedule_reload_after_binding_change()
+
+    def _schedule_reload_after_binding_change(self) -> None:
+        """Reload entities after a complete binding operation."""
         self.hass.async_create_task(
             self.hass.config_entries.async_reload(self.config_entry.entry_id),
             "reload UltraWideLock after binding change",
