@@ -31,7 +31,7 @@ from .const import (
 from .history import UwbHistoryStore
 
 CARD_URL = "/uwb_matter/uwb-approach-card.js"
-CARD_RESOURCE_URL = f"{CARD_URL}?v=0.16.2"
+CARD_RESOURCE_URL = f"{CARD_URL}?v=0.16.3"
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
