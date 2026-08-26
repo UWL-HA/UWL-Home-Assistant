@@ -46,6 +46,47 @@ def field(binding: object, name: str) -> Any:
     return getattr(binding, name, None)
 
 
+def normalized_acl(value: object) -> list[dict[str, Any]]:
+    """Convert cached ACL entries to Matter Server's write format."""
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        targets = field(item, "targets")
+        normalized_targets = None
+        if isinstance(targets, list):
+            normalized_targets = []
+            for target in targets:
+                normalized_targets.append(
+                    {
+                        "cluster": _acl_target_field(target, "cluster", 1),
+                        "endpoint": _acl_target_field(target, "endpoint", 2),
+                        "device_type": _acl_target_field(
+                            target, "deviceType", 3
+                        ),
+                    }
+                )
+        subjects = field(item, "subjects")
+        result.append(
+            {
+                "privilege": field(item, "privilege"),
+                "auth_mode": field(item, "authMode"),
+                "subjects": subjects if isinstance(subjects, list) else None,
+                "targets": normalized_targets,
+            }
+        )
+    return result
+
+
+def _acl_target_field(target: object, name: str, field_id: int) -> int | None:
+    """Read one nullable AccessControlTarget field."""
+    if isinstance(target, dict):
+        value = target.get(name, target.get(str(field_id), target.get(field_id)))
+    else:
+        value = getattr(target, name, None)
+    return value if isinstance(value, int) else None
+
+
 def normalized_bindings(value: object) -> list[dict[str, int | None]]:
     """Convert cached bindings to values accepted by Matter Server."""
     if not isinstance(value, list):

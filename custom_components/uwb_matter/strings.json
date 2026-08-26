@@ -50,8 +50,15 @@
       },
       "add_binding": {
         "title": "Add a bound lock",
-        "description": "Choose a Matter Door Lock endpoint. The target ACL must already grant this UltraWideLock node CASE Operate access; the integration never modifies ACLs automatically.",
+        "description": "Choose a Matter Door Lock endpoint. If the required permission is missing, the integration will offer to add a narrowly scoped ACL entry before creating the binding.",
         "data": {"target_lock": "Matter lock"}
+      },
+      "confirm_acl": {
+        "title": "Grant Matter access to the lock",
+        "description": "**Warning:** Matter ACL changes are security-sensitive. An incorrect or interrupted ACL write could cause Home Assistant or another controller to lose Matter access to this lock. The integration will preserve every existing entry, add only CASE Operate access for this UltraWideLock to the selected Door Lock endpoint, verify the result, and automatically restore the original ACL if creating the binding fails. If all Matter administrator access is nevertheless lost, the lock may need to be factory-reset and commissioned again.",
+        "data": {
+          "confirm_acl_risk": "I understand the risk and want to add the required ACL permission"
+        }
       },
       "remove_binding": {
         "title": "Remove a bound lock",
@@ -90,12 +97,16 @@
     },
     "error": {
       "binding_acl_missing": "The target lock ACL does not grant this UltraWideLock node CASE Operate access. Add that ACL permission first; no binding was written.",
-      "binding_write_failed": "Matter Server could not update the binding table. Check that the UltraWideLock is connected and that this Home Assistant fabric has Manage permission."
+      "binding_write_failed": "Matter Server could not update the binding table. Check that the UltraWideLock is connected and that this Home Assistant fabric has Manage permission.",
+      "acl_risk_not_confirmed": "Confirm the warning before changing the lock ACL.",
+      "acl_write_failed": "Matter Server could not safely add or verify the required ACL permission. No binding was created."
     },
     "abort": {
       "no_ultrawidelocks": "No available UltraWideLock nodes were found.",
       "no_matter_locks": "No other Matter Door Lock endpoints were found.",
-      "no_door_lock_bindings": "This UltraWideLock has no Door Lock bindings to remove."
+      "no_door_lock_bindings": "This UltraWideLock has no Door Lock bindings to remove.",
+      "binding_write_failed": "Matter Server could not create the binding. Any ACL change made by this flow was restored.",
+      "acl_rollback_failed": "Creating the binding failed and the original ACL could not be restored automatically. Check the target lock ACL in Matter Server immediately; another Matter administrator or a factory reset may be required."
     }
   }
 }

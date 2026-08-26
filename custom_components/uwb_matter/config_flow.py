@@ -15,9 +15,9 @@ from matter_server.common.models import APICommand
 from .binding import (
     binding_path,
     door_lock_bindings,
-    field,
     matter_lock_name,
     matter_lock_targets,
+    normalized_acl,
     normalized_bindings,
     parse_target_key,
     target_key,
@@ -44,6 +44,7 @@ CONF_SETUP_CONFIRMED = "setup_confirmed"
 CONF_SOURCE_LOCK = "source_lock"
 CONF_TARGET_LOCK = "target_lock"
 CONF_BINDING_TO_REMOVE = "binding_to_remove"
+CONF_CONFIRM_ACL_RISK = "confirm_acl_risk"
 
 
 class UwbMatterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -164,26 +165,14 @@ class UwbMatterOptionsFlow(OptionsFlow):
             target_node, target_endpoint = parse_target_key(
                 user_input[CONF_TARGET_LOCK]
             )
-            if not self._target_acl_allows(target_node, self._binding_source):
-                errors["base"] = "binding_acl_missing"
-            else:
-                bindings = await self._current_bindings()
-                candidate = {
-                    "node": target_node,
-                    "group": None,
-                    "endpoint": target_endpoint,
-                    "cluster": DOOR_LOCK_CLUSTER_ID,
-                }
-                if candidate not in bindings:
-                    bindings.append(candidate)
-                    try:
-                        await self._write_bindings(bindings)
-                    except Exception:  # noqa: BLE001
-                        errors["base"] = "binding_write_failed"
-                if not errors:
-                    return self.async_create_entry(
-                        title="", data=self.config_entry.options
-                    )
+            acl = await self._current_acl(target_node)
+            if not self._target_acl_allows(
+                acl, self._binding_source, target_endpoint
+            ):
+                self._acl_target = (target_node, target_endpoint)
+                self._acl_backup = acl
+                return await self.async_step_confirm_acl()
+            return await self._finish_add_binding(target_node, target_endpoint)
         return self.async_show_form(
             step_id="add_binding",
             data_schema=vol.Schema(
@@ -191,6 +180,79 @@ class UwbMatterOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_confirm_acl(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Warn before granting the UltraWideLock access to a target lock."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not user_input[CONF_CONFIRM_ACL_RISK]:
+                errors[CONF_CONFIRM_ACL_RISK] = "acl_risk_not_confirmed"
+            else:
+                target_node, target_endpoint = self._acl_target
+                updated_acl = [
+                    *self._acl_backup,
+                    {
+                        "privilege": 3,
+                        "auth_mode": 2,
+                        "subjects": [self._binding_source],
+                        "targets": [
+                            {
+                                "cluster": DOOR_LOCK_CLUSTER_ID,
+                                "endpoint": target_endpoint,
+                                "device_type": None,
+                            }
+                        ],
+                    },
+                ]
+                try:
+                    await self._write_acl(target_node, updated_acl)
+                except Exception:  # noqa: BLE001
+                    try:
+                        await self._write_acl(target_node, self._acl_backup)
+                    except Exception:  # noqa: BLE001
+                        return self.async_abort(reason="acl_rollback_failed")
+                    errors["base"] = "acl_write_failed"
+                if not errors:
+                    result = await self._finish_add_binding(
+                        target_node, target_endpoint, self._acl_backup
+                    )
+                    return result
+        return self.async_show_form(
+            step_id="confirm_acl",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_CONFIRM_ACL_RISK, default=False): bool}
+            ),
+            errors=errors,
+        )
+
+    async def _finish_add_binding(
+        self,
+        target_node: int,
+        target_endpoint: int,
+        acl_rollback: list[dict[str, Any]] | None = None,
+    ) -> ConfigFlowResult:
+        """Write and verify one Door Lock binding."""
+        bindings = await self._current_bindings()
+        candidate = {
+            "node": target_node,
+            "group": None,
+            "endpoint": target_endpoint,
+            "cluster": DOOR_LOCK_CLUSTER_ID,
+        }
+        if candidate not in bindings:
+            bindings.append(candidate)
+            try:
+                await self._write_bindings(bindings)
+            except Exception:  # noqa: BLE001
+                if acl_rollback is not None:
+                    try:
+                        await self._write_acl(target_node, acl_rollback)
+                    except Exception:  # noqa: BLE001
+                        return self.async_abort(reason="acl_rollback_failed")
+                return self.async_abort(reason="binding_write_failed")
+        return self.async_create_entry(title="", data=self.config_entry.options)
 
     async def async_step_remove_binding(
         self, user_input: dict[str, Any] | None = None
@@ -270,25 +332,55 @@ class UwbMatterOptionsFlow(OptionsFlow):
             "reload UltraWideLock after binding change",
         )
 
-    def _target_acl_allows(self, target_node: int, source_node: int) -> bool:
-        """Return whether the target ACL grants CASE Operate or higher."""
-        node = get_matter(self.hass).matter_client.get_node(target_node)
-        path = create_attribute_path(
-            0, ACCESS_CONTROL_CLUSTER_ID, ACL_ATTRIBUTE_ID
+    async def _current_acl(self, target_node: int) -> list[dict[str, Any]]:
+        """Read the current fabric's ACL directly from the target lock."""
+        path = create_attribute_path(0, ACCESS_CONTROL_CLUSTER_ID, ACL_ATTRIBUTE_ID)
+        values = await get_matter(self.hass).matter_client.send_command(
+            APICommand.READ_ATTRIBUTE,
+            node_id=target_node,
+            attribute_path=path,
+            fabric_filtered=True,
         )
-        acl = node.node_data.attributes.get(path)
-        if not isinstance(acl, list):
-            return False
+        return normalized_acl(values.get(path))
+
+    async def _write_acl(
+        self, target_node: int, acl: list[dict[str, Any]]
+    ) -> None:
+        """Replace and verify this fabric's ACL on the target lock."""
+        client = get_matter(self.hass).matter_client
+        if callable(method := getattr(client, "set_acl_entry", None)):
+            await method(target_node, acl)
+        else:
+            await client.send_command(
+                APICommand.SET_ACL_ENTRY, node_id=target_node, entry=acl
+            )
+        actual = await self._current_acl(target_node)
+        if any(entry not in actual for entry in acl):
+            raise ValueError("Matter ACL verification failed")
+
+    def _target_acl_allows(
+        self, acl: list[dict[str, Any]], source_node: int, endpoint: int
+    ) -> bool:
+        """Return whether the target ACL grants CASE Operate or higher."""
         for entry in acl:
-            subjects = field(entry, "subjects")
-            privilege = field(entry, "privilege")
-            auth_mode = field(entry, "authMode")
+            subjects = entry["subjects"]
+            privilege = entry["privilege"]
+            auth_mode = entry["auth_mode"]
+            targets = entry["targets"]
             if (
                 isinstance(subjects, list)
                 and source_node in subjects
                 and isinstance(privilege, int)
                 and privilege >= 3
                 and auth_mode == 2
+                and (
+                    targets is None
+                    or any(
+                        (target["cluster"] in (None, DOOR_LOCK_CLUSTER_ID))
+                        and target["endpoint"] in (None, endpoint)
+                        for target in targets
+                    )
+                )
             ):
                 return True
         return False
