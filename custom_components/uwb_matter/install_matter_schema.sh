@@ -11,10 +11,10 @@ if [ ! -f "$source_file" ]; then
     exit 1
 fi
 if [ ! -d "$target_dir" ]; then
-    echo "Error: Matter Server add-on configuration directory not found: $target_dir" >&2
+    echo "Error: Matter Server app configuration directory not found: $target_dir" >&2
     exit 1
 fi
 
 cp "$source_file" "$target_file"
 echo "Installed UltraWideLock Matter schema at $target_file"
-echo "Restart the Matter Server add-on after configuring NODE_OPTIONS."
+echo "Restart the Matter Server app after configuring NODE_OPTIONS."

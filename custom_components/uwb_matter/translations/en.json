@@ -8,12 +8,12 @@
           "enable_writable_controls": "Enable writable UltraWideLock controls"
         },
         "data_description": {
-          "enable_writable_controls": "Requires installing the bundled custom-cluster schema in the Matter Server add-on. The next step provides instructions."
+          "enable_writable_controls": "Requires installing the bundled custom-cluster schema in the Matter Server app. The next step provides instructions."
         }
       },
       "writable_setup": {
         "title": "Enable writable controls",
-        "description": "Complete these steps before finishing setup:\n\n1. Open the **Terminal & SSH** add-on.\n2. Run `sh /homeassistant/custom_components/uwb_matter/install_matter_schema.sh`.\n3. Open **Settings > Add-ons > Matter Server > Configuration**.\n4. Press the three dots and choose **Edit in YAML**.\n5. Add:\n```yaml\nmatter_server_env_vars:\n  - NODE_OPTIONS=--import=/config/ultrawidelock-cluster.mjs\n```\n6. Save the add-on configuration. Confirm below, finish this integration flow, then restart Matter Server and Home Assistant.",
+        "description": "Complete these steps before finishing setup:\n\n1. Open the **Terminal & SSH** app.\n2. Run `sh /homeassistant/custom_components/uwb_matter/install_matter_schema.sh`.\n3. Open **Settings > Apps > Matter Server > Configuration**.\n4. Press the three dots and choose **Edit in YAML**.\n5. Add:\n```yaml\nmatter_server_env_vars:\n  - NODE_OPTIONS=--import=/config/ultrawidelock-cluster.mjs\n```\n6. Save the app configuration. Confirm below, finish this integration flow, then restart Matter Server and Home Assistant.",
         "data": {
           "setup_confirmed": "I installed the schema and added the Matter Server environment variable"
         }
@@ -59,7 +59,7 @@
           "create_presence_sensor": "Create an occupancy sensor for this device"
         },
         "data_description": {
-          "friendly_name": "For example: Jonathan's iPhone or Apple Watch.",
+          "friendly_name": "For example: Personal iPhone or Apple Watch.",
           "create_presence_sensor": "Creates a standard Home Assistant occupancy binary sensor attached to every UltraWideLock that sees this credential. Disable it to remove the sensor while retaining the friendly name."
         }
       }

@@ -101,13 +101,13 @@ settings requires the included Matter Server schema. New installations are
 guided through these steps directly in the integration setup flow; the commands
 are repeated here for reference.
 
-Run in the **Terminal & SSH** add-on:
+Run in the **Terminal & SSH** app:
 
 ```sh
 sh /homeassistant/custom_components/uwb_matter/install_matter_schema.sh
 ```
 
-Then open the Matter Server add-on and go to **Configuration**. Press the three
+Then open the Matter Server app and go to **Configuration**. Press the three
 dots, select **Edit in YAML**, and add this at the bottom:
 
 ```yaml
@@ -115,7 +115,7 @@ matter_server_env_vars:
   - NODE_OPTIONS=--import=/config/ultrawidelock-cluster.mjs
 ```
 
-Save and restart the Matter Server add-on, then restart Home Assistant Core.
+Save and restart the Matter Server app, then restart Home Assistant Core.
 Repeat the installer command after an integration update when the bundled schema
 has changed. This entire step is optional for read-only use.
 
