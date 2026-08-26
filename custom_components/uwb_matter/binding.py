@@ -115,8 +115,7 @@ def normalized_bindings(value: object) -> list[dict[str, int | None]]:
     for item in value:
         target: dict[str, int | None] = {}
         for key in ("node", "group", "endpoint", "cluster"):
-            item_value = field(item, key)
-            target[key] = item_value if isinstance(item_value, int) else None
+            target[key] = _integer(field(item, key))
         if target["node"] is not None or target["group"] is not None:
             result.append(target)
     return result
