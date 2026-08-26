@@ -31,8 +31,32 @@
         "description": "Choose whether to manage live-data freshness or detected UWB devices.",
         "menu_options": {
           "data_freshness": "UWB data freshness",
-          "credentials": "Detected UWB devices"
+          "credentials": "Detected UWB devices",
+          "matter_binding": "Matter lock binding"
         }
+      },
+      "matter_binding": {
+        "title": "Matter lock binding",
+        "description": "Choose the UltraWideLock whose standard Matter Door Lock bindings you want to inspect or change.",
+        "data": {"source_lock": "UltraWideLock"}
+      },
+      "binding_action": {
+        "title": "Matter lock binding",
+        "description": "Adding or removing a binding preserves every unrelated entry in the existing binding table.",
+        "menu_options": {
+          "add_binding": "Add a bound lock",
+          "remove_binding": "Remove a bound lock"
+        }
+      },
+      "add_binding": {
+        "title": "Add a bound lock",
+        "description": "Choose a Matter Door Lock endpoint. The target ACL must already grant this UltraWideLock node CASE Operate access; the integration never modifies ACLs automatically.",
+        "data": {"target_lock": "Matter lock"}
+      },
+      "remove_binding": {
+        "title": "Remove a bound lock",
+        "description": "Only the selected Door Lock binding is removed. Other bindings remain unchanged.",
+        "data": {"binding_to_remove": "Bound lock"}
       },
       "data_freshness": {
         "title": "UWB data freshness",
@@ -63,6 +87,15 @@
           "create_presence_sensor": "Creates a standard Home Assistant occupancy binary sensor attached to every UltraWideLock that sees this credential. Disable it to remove the sensor while retaining the friendly name."
         }
       }
+    },
+    "error": {
+      "binding_acl_missing": "The target lock ACL does not grant this UltraWideLock node CASE Operate access. Add that ACL permission first; no binding was written.",
+      "binding_write_failed": "Matter Server could not update the binding table. Check that the UltraWideLock is connected and that this Home Assistant fabric has Manage permission."
+    },
+    "abort": {
+      "no_ultrawidelocks": "No available UltraWideLock nodes were found.",
+      "no_matter_locks": "No other Matter Door Lock endpoints were found.",
+      "no_door_lock_bindings": "This UltraWideLock has no Door Lock bindings to remove."
     }
   }
 }
