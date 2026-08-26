@@ -68,12 +68,14 @@
       },
       "confirm_remove_binding": {
         "title": "Remove bound lock",
-        "description": "Removing the binding stops this UltraWideLock from targeting the selected lock. By default, the integration also restores the original ACL permission state by removing only the exact CASE Operate entry for this UltraWideLock, Door Lock cluster, and endpoint. Every unrelated ACL entry is preserved and the complete result is verified.\n\nTurn this option off if you deliberately want the UltraWideLock to retain Matter permission to operate the target lock after the binding is removed.",
+        "description": "**Review this security-sensitive change before continuing.**\n\n**Bound lock:** `{target_lock}`\n**UltraWideLock node:** `{source_node}`\n**Target node:** `{target_node}`\n**Door Lock endpoint:** `{target_endpoint}`\n\nThe Matter binding will be removed, so this UltraWideLock will stop sending bound lock/unlock commands to the selected lock. No other binding-table entry is changed.\n\nIf **Restore the original ACL permission state** is enabled, the integration also removes only the exact CASE Operate ACL entry for this UltraWideLock, Door Lock cluster `257`, and the endpoint shown above. It preserves every unrelated ACL entry and verifies the complete ACL after writing. If disabled, the binding is removed but the UltraWideLock keeps its existing Matter permission to operate this lock.\n\nImmediately before changing anything, the integration reads the current Binding Table and ACL again. If either change or verification fails, it attempts to restore both previous tables. If that rollback also fails, Home Assistant will show an explicit warning: inspect both devices in Matter Server before retrying or editing anything manually.",
         "data": {
-          "restore_binding_acl": "Restore the original ACL permission state"
+          "restore_binding_acl": "Restore the original ACL permission state",
+          "confirm_binding_removal": "I reviewed the target and understand the binding and ACL consequences"
         },
         "data_description": {
-          "restore_binding_acl": "Recommended. Removes the narrowly scoped Door Lock permission together with the binding. If disabled, the binding is removed but the ACL permission remains."
+          "restore_binding_acl": "Recommended. Removes the narrowly scoped Door Lock permission together with the binding. If disabled, the binding is removed but the ACL permission remains.",
+          "confirm_binding_removal": "Required before Home Assistant writes either table."
         }
       },
       "data_freshness": {
@@ -111,7 +113,8 @@
       "binding_write_failed": "Matter Server could not update the binding table. Check that the UltraWideLock is connected and that this Home Assistant fabric has Manage permission.",
       "acl_risk_not_confirmed": "Confirm the warning before changing the lock ACL.",
       "acl_backup_not_saved": "Copy the complete original ACL and confirm that it is safely stored before continuing.",
-      "acl_write_failed": "Matter Server could not safely add or verify the required ACL permission. No binding was created."
+      "acl_write_failed": "Matter Server could not safely add or verify the required ACL permission. No binding was created.",
+      "binding_removal_not_confirmed": "Review the warning and confirm the removal before continuing."
     },
     "abort": {
       "no_ultrawidelocks": "No available UltraWideLock nodes were found.",

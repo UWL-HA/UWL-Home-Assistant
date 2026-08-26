@@ -47,6 +47,7 @@ CONF_SOURCE_LOCK = "source_lock"
 CONF_TARGET_LOCK = "target_lock"
 CONF_BINDING_TO_REMOVE = "binding_to_remove"
 CONF_RESTORE_BINDING_ACL = "restore_binding_acl"
+CONF_CONFIRM_BINDING_REMOVAL = "confirm_binding_removal"
 CONF_BINDING_ACL_BACKUPS = "binding_acl_backups"
 CONF_CONFIRM_ACL_RISK = "confirm_acl_risk"
 CONF_ACL_BACKUP_SAVED = "acl_backup_saved"
@@ -310,7 +311,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Remove one Door Lock binding while preserving all other entries."""
         registry = er.async_get(self.hass)
-        current = await self._current_bindings()
+        current = self._cached_bindings()
         locks = door_lock_bindings(current)
         choices = {
             target_key(item["node"], item["endpoint"]): matter_lock_name(
@@ -322,9 +323,9 @@ class UwbMatterOptionsFlow(OptionsFlow):
             return self.async_abort(reason="no_door_lock_bindings")
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._binding_to_remove = parse_target_key(
-                user_input[CONF_BINDING_TO_REMOVE]
-            )
+            selected = user_input[CONF_BINDING_TO_REMOVE]
+            self._binding_to_remove = parse_target_key(selected)
+            self._binding_remove_name = choices[selected]
             return await self.async_step_confirm_remove_binding()
         return self.async_show_form(
             step_id="remove_binding",
@@ -339,7 +340,8 @@ class UwbMatterOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Remove a binding and optionally its narrowly scoped ACL entry."""
         node_id, endpoint = self._binding_to_remove
-        if user_input is not None:
+        errors: dict[str, str] = {}
+        if user_input is not None and user_input[CONF_CONFIRM_BINDING_REMOVAL]:
             restore_acl = user_input[CONF_RESTORE_BINDING_ACL]
             bindings_before = await self._current_bindings()
             bindings_after = [
@@ -411,11 +413,27 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 options.pop(CONF_BINDING_ACL_BACKUPS, None)
             self._schedule_reload_after_binding_change()
             return self.async_create_entry(title="", data=options)
+        if user_input is not None:
+            errors[CONF_CONFIRM_BINDING_REMOVAL] = (
+                "binding_removal_not_confirmed"
+            )
         return self.async_show_form(
             step_id="confirm_remove_binding",
             data_schema=vol.Schema(
-                {vol.Required(CONF_RESTORE_BINDING_ACL, default=True): bool}
+                {
+                    vol.Required(CONF_RESTORE_BINDING_ACL, default=True): bool,
+                    vol.Required(
+                        CONF_CONFIRM_BINDING_REMOVAL, default=False
+                    ): bool,
+                }
             ),
+            errors=errors,
+            description_placeholders={
+                "target_lock": self._binding_remove_name,
+                "source_node": str(self._binding_source),
+                "target_node": str(node_id),
+                "target_endpoint": str(endpoint),
+            },
         )
 
     def _acl_backup_key(self, target_node: int, endpoint: int) -> str:
@@ -457,6 +475,12 @@ class UwbMatterOptionsFlow(OptionsFlow):
         else:
             node.node_data.attributes[path] = value
         return normalized_bindings(value)
+
+    def _cached_bindings(self) -> list[dict[str, int | None]]:
+        """Return cached bindings without waiting on an unreachable node."""
+        path = binding_path(ENDPOINT_ID)
+        node = get_matter(self.hass).matter_client.get_node(self._binding_source)
+        return normalized_bindings(node.node_data.attributes.get(path))
 
     async def _write_bindings(
         self,
