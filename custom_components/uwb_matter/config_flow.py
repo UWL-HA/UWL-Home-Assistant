@@ -255,7 +255,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 endpoint=ENDPOINT_ID,
                 bindings=bindings,
             )
-        await client.refresh_attribute(
+        await client.read_attribute(
             self._binding_source, binding_path(ENDPOINT_ID)
         )
 
