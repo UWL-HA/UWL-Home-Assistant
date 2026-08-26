@@ -266,6 +266,29 @@ class UwbBoundLocksSensor(UwbMatterEntity, SensorEntity):
     _attr_name = "Bound lock"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
+    def __init__(
+        self, hass: HomeAssistant, node_id: int, cluster_id: int, attribute_id: int
+    ) -> None:
+        super().__init__(hass, node_id, cluster_id, attribute_id)
+        self._binding_reload_pending = False
+
+    def _attribute_updated(self, event: EventType, data: object) -> None:
+        """Reload entities when the presence of a Door Lock binding changes."""
+        had_binding = bool(door_lock_bindings(self._value))
+        super()._attribute_updated(event, data)
+        has_binding = bool(door_lock_bindings(self._value))
+        if (
+            had_binding == has_binding
+            or self._binding_reload_pending
+            or self._config_entry is None
+        ):
+            return
+        self._binding_reload_pending = True
+        self._hass.async_create_task(
+            self._hass.config_entries.async_reload(self._config_entry.entry_id),
+            "reload UltraWideLock binding diagnostics",
+        )
+
     @property
     def native_value(self) -> str:
         """Return a friendly summary of bound Door Lock targets."""
@@ -317,6 +340,7 @@ def _async_setup_bound_lock_details(
         ENDPOINT_ID, CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID
     )
     entities: list[UwbMatterEntity] = []
+    valid_unique_ids: set[str] = set()
     for node in matter.matter_client.get_nodes():
         if presence_path not in node.node_data.attributes:
             continue
@@ -336,6 +360,17 @@ def _async_setup_bound_lock_details(
             )
             entity._config_entry = entry
             entities.append(entity)
+            valid_unique_ids.add(entity.unique_id)
+    registry = er.async_get(hass)
+    for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if (
+            any(
+                registered.unique_id.endswith(f"-bound-{key}")
+                for key in ("entity_id", "node", "endpoint")
+            )
+            and registered.unique_id not in valid_unique_ids
+        ):
+            registry.async_remove(registered.entity_id)
     if entities:
         async_add_entities(entities)
 
