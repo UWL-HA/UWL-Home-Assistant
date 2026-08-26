@@ -49,7 +49,7 @@ async def async_setup_entry(
             async_add_entities,
             ((CUSTOM_CLUSTER_ID, CREDENTIAL_ID_ATTRIBUTE_ID),),
             lambda hass, node_id, cluster_id, attribute_id,
-            credential_id=credential_id: UwbCredentialPresenceBinarySensor(
+            credential_id=credential_id: UwbCredentialOccupancyBinarySensor(
                 hass,
                 node_id,
                 cluster_id,
@@ -96,10 +96,10 @@ class UwbActuatorBinarySensor(UwbMatterEntity, BinarySensorEntity):
         return None if self._value is None else bool(self._value)
 
 
-class UwbCredentialPresenceBinarySensor(UwbMatterEntity, BinarySensorEntity):
+class UwbCredentialOccupancyBinarySensor(UwbMatterEntity, BinarySensorEntity):
     """Whether one selected UWB credential is currently in range."""
 
-    _attr_device_class = BinarySensorDeviceClass.PRESENCE
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
 
     def __init__(
         self,
@@ -110,7 +110,7 @@ class UwbCredentialPresenceBinarySensor(UwbMatterEntity, BinarySensorEntity):
         credential_id: str,
         friendly_name: str,
     ) -> None:
-        """Initialize a credential-specific presence sensor."""
+        """Initialize a credential-specific occupancy sensor."""
         super().__init__(hass, node_id, cluster_id, attribute_id)
         self._credential_id = int(credential_id, 16)
         self._attr_name = (

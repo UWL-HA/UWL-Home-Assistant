@@ -23,7 +23,7 @@ Matter fabric or CASE session.
 | UWB credential | Sensor | Friendly name of the credential currently in range |
 | UWB data status | Sensor | Live, stale, or unavailable subscription status |
 | Last UWB update | Sensor | Timestamp of the latest live UWB update |
-| Credential in range | Optional binary sensor | Presence of one selected credential |
+| Credential in range | Optional binary sensor | Occupancy for one selected credential |
 | UWB event | Event | Detection, approach, threshold, lock, session outcome, and data-health events |
 | Approach, unlock and relock distance | Numbers | UWB policy distances in centimetres |
 | Motor time | Number | Local lock motor duration |
@@ -31,9 +31,12 @@ Matter fabric or CASE session.
 | Bound-lock unlock/relock | Switches | Allow or prevent automatic bound-lock actions |
 | Last device seen | Sensors | Previous completed ranging session and time |
 | Last device unlocked | Sensors | Credential, time, and distance of the last unlock |
+| Bound lock | Diagnostic sensor | Friendly names and Matter endpoints of Door Lock bindings |
 
-Unlock history follows native Matter Door Lock operation events, so repeated
-unlock operations are recorded even when the lock was already unlocked.
+Unlock history follows native Matter Door Lock operation events. Because the
+firmware does not emit another operation event when its reported state is already
+unlocked, the integration also records the first enabled UWB unlock-threshold
+crossing in each credential session.
 
 Distance writes are validated before they reach Matter. Home Assistant requires
 `unlock distance < approach distance < relock distance` and shows the current
@@ -41,15 +44,16 @@ values when a proposed change would break that order.
 
 Credential IDs are collected automatically. Give them friendly names under
 **Settings > Devices & services > UltraWideLock > Configure**. Select a credential
-and give it a friendly device name. Every newly detected credential receives a
-standard presence binary sensor by default; this can be disabled on the same
-credential screen. The pseudonymous raw ID remains available as a state
-attribute.
+and give it a friendly device name. A Home Assistant notification points to this
+screen when a new credential is discovered. Every newly detected credential
+receives a standard occupancy binary sensor by default; disable the option on
+the same credential screen to remove it. The pseudonymous raw ID remains
+available as a state attribute.
 
-The same configuration screen controls the stale-data timeout (15 seconds by
-default). When an active UWB stream stops updating, its status becomes `stale`
-and the live distance and movement entities are cleared. With no device in range,
-the status is `unavailable`.
+The separate **UWB data freshness** configuration controls the stale-data timeout
+(15 seconds by default). When an active UWB stream stops updating, its status
+becomes `stale` and the live distance and movement entities are cleared. With no
+device in range, the status is `unavailable`.
 
 The **UWB event** entity emits `device_detected`, `approach_started`,
 `unlock_threshold_crossed`, `unlocked`, `approach_aborted`,

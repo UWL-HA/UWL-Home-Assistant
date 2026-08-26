@@ -272,6 +272,7 @@ class UwbOverviewCard extends HTMLElement {
         entry.entity_id.startsWith("sensor.") && entry.unique_id?.endsWith(suffix))?.entity_id;
       const custom = 4294048784;
       const doorLock = 257;
+      const binding = 30;
       this._entities = {
         presence: find("binary_sensor", custom, 0), distance: find("sensor", custom, 1),
         credential: find("sensor", custom, 2),
@@ -286,6 +287,7 @@ class UwbOverviewCard extends HTMLElement {
         lastUnlockedDistance: history("last_unlocked_distance"),
         dataStatus: special("-freshness-status"),
         lastUwbUpdate: special("-freshness-last-update"),
+        boundLock: find("sensor", binding, 0),
       };
       this._resolved = true;
     } catch (error) {
@@ -388,6 +390,7 @@ class UwbOverviewCard extends HTMLElement {
           <button class="metric" data-info="${this.entity("movement") || ""}"><ha-icon icon="mdi:swap-horizontal"></ha-icon><small>Movement</small><b>${this.escape(this.display("movement", true))}</b></button>
           <button class="metric" data-info="${this.entity("dataStatus") || ""}"><ha-icon icon="mdi:access-point-check"></ha-icon><small>Data status</small><b>${this.escape(this.display("dataStatus", true))}</b></button>
           <button class="metric" data-info="${this.entity("lastUwbUpdate") || ""}"><ha-icon icon="mdi:update"></ha-icon><small>Last update</small><b>${this.escape(this.timestamp("lastUwbUpdate"))}</b></button>
+          <button class="metric" data-info="${this.entity("boundLock") || ""}"><ha-icon icon="mdi:link-variant"></ha-icon><small>Bound lock</small><b>${this.escape(this.display("boundLock"))}</b></button>
         </div></section>
         <section><div class="section-head"><ha-icon icon="mdi:tune-variant"></ha-icon><h3>Unlock &amp; Relock Configuration</h3></div><div class="configuration">
           ${this.numberControl("approachDistance", "Approach distance", "mdi:map-marker-distance")}

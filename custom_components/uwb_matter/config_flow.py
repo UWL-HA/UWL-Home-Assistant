@@ -3,8 +3,8 @@
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
@@ -85,31 +85,50 @@ class UwbMatterOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Select a credential to configure and set the stale timeout."""
+        """Offer clearly separated data and credential settings."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["data_freshness", "credentials"],
+        )
+
+    async def async_step_data_freshness(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure when live UWB subscription data becomes stale."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={**self.config_entry.options, **user_input},
+            )
+        return self.async_show_form(
+            step_id="data_freshness",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_STALE_TIMEOUT,
+                        default=self.config_entry.options.get(
+                            CONF_STALE_TIMEOUT, DEFAULT_STALE_TIMEOUT
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=3, max=300))
+                }
+            ),
+        )
+
+    async def async_step_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Select a discovered credential to name or disable."""
         credentials = dict(
             self.config_entry.options.get(CONF_CREDENTIAL_NAMES, {})
         )
         if user_input is not None:
-            self._stale_timeout = user_input[CONF_STALE_TIMEOUT]
-            if credential_id := user_input.get(CONF_CREDENTIAL_ID):
-                self._credential_id = credential_id
-                return await self.async_step_credential()
-            return self.async_create_entry(
-                title="",
-                data={
-                    **self.config_entry.options,
-                    CONF_STALE_TIMEOUT: self._stale_timeout,
-                },
-            )
-
-        schema_fields: dict[vol.Marker, object] = {
-            vol.Required(
-                CONF_STALE_TIMEOUT,
-                default=self.config_entry.options.get(
-                    CONF_STALE_TIMEOUT, DEFAULT_STALE_TIMEOUT
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=3, max=300))
-        }
+            if not (credential_id := user_input.get(CONF_CREDENTIAL_ID)):
+                return self.async_create_entry(
+                    title="", data=self.config_entry.options
+                )
+            self._credential_id = credential_id
+            return await self.async_step_credential()
+        schema_fields: dict[vol.Marker, object] = {}
         if credentials:
             labels = {
                 credential_id: (
@@ -119,12 +138,12 @@ class UwbMatterOptionsFlow(OptionsFlow):
             }
             schema_fields[vol.Required(CONF_CREDENTIAL_ID)] = vol.In(labels)
         schema = vol.Schema(schema_fields)
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="credentials", data_schema=schema)
 
     async def async_step_credential(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Configure the name and presence entity for one credential."""
+        """Configure the name and occupancy entity for one credential."""
         credential_id = self._credential_id
         names = dict(self.config_entry.options.get(CONF_CREDENTIAL_NAMES, {}))
         presence = dict(
@@ -137,13 +156,15 @@ class UwbMatterOptionsFlow(OptionsFlow):
             presence[credential_id] = enabled
             if was_enabled and not enabled:
                 self._remove_presence_entities(credential_id)
+            persistent_notification.async_dismiss(
+                self.hass, f"uwb_matter_new_credential_{credential_id}"
+            )
             return self.async_create_entry(
                 title="",
                 data={
                     **self.config_entry.options,
                     CONF_CREDENTIAL_NAMES: names,
                     CONF_CREDENTIAL_PRESENCE: presence,
-                    CONF_STALE_TIMEOUT: self._stale_timeout,
                 },
             )
         return self.async_show_form(
@@ -163,7 +184,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
         )
 
     def _remove_presence_entities(self, credential_id: str) -> None:
-        """Remove disabled credential-presence entities from the registry."""
+        """Remove disabled credential-occupancy entities from the registry."""
         registry = er.async_get(self.hass)
         suffix = f"-credential-presence-{credential_id}"
         for entity in er.async_entries_for_config_entry(

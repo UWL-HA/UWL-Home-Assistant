@@ -27,23 +27,40 @@
   "options": {
     "step": {
       "init": {
-        "title": "Credentials",
-        "description": "Choose a detected credential to name or configure. Each newly detected credential gets its own presence sensor by default.",
+        "title": "UltraWideLock settings",
+        "description": "Choose whether to manage live-data freshness or detected UWB devices.",
+        "menu_options": {
+          "data_freshness": "UWB data freshness",
+          "credentials": "Detected UWB devices"
+        }
+      },
+      "data_freshness": {
+        "title": "UWB data freshness",
+        "description": "This setting is independent of device names. It determines how long Home Assistant may show the latest live distance and movement when Matter updates stop arriving. After this timeout the data is marked stale and live values are cleared.",
         "data": {
-          "stale_timeout_seconds": "Clear stale UWB data after (seconds)",
+          "stale_timeout_seconds": "Mark UWB data stale after (seconds)"
+        },
+        "data_description": {
+          "stale_timeout_seconds": "Use a short value to hide frozen data quickly. The default is 15 seconds."
+        }
+      },
+      "credentials": {
+        "title": "Detected UWB devices",
+        "description": "Choose a detected credential to give it a friendly name or remove its automatically created occupancy sensor.",
+        "data": {
           "credential_id": "Credential to configure"
         }
       },
       "credential": {
-        "title": "Credential settings",
-        "description": "Configure UWB credential `{credential_id}`. The presence sensor turns on only when this specific credential is in range of the selected UltraWideLock.",
+        "title": "UWB device settings",
+        "description": "Configure UWB credential `{credential_id}`. Its occupancy sensor turns on only when this specific device is in range of the selected UltraWideLock. Turn the option off to remove that sensor.",
         "data": {
           "friendly_name": "Device name",
-          "create_presence_sensor": "Create a presence sensor for this device"
+          "create_presence_sensor": "Create an occupancy sensor for this device"
         },
         "data_description": {
           "friendly_name": "For example: Jonathan's iPhone or Apple Watch.",
-          "create_presence_sensor": "Creates a standard Home Assistant presence binary sensor attached to every UltraWideLock that sees this credential."
+          "create_presence_sensor": "Creates a standard Home Assistant occupancy binary sensor attached to every UltraWideLock that sees this credential. Disable it to remove the sensor while retaining the friendly name."
         }
       }
     }
