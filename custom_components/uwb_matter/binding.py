@@ -10,11 +10,28 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOOR_LOCK_CLUSTER_ID
 
+STRUCT_FIELD_IDS = {
+    "node": 1,
+    "group": 2,
+    "endpoint": 3,
+    "cluster": 4,
+    "fabricIndex": 254,
+    "privilege": 1,
+    "authMode": 2,
+    "subjects": 3,
+    "targets": 4,
+}
+
 
 def field(binding: object, name: str) -> Any:
     """Read a binding field from either JSON or an SDK struct."""
     if isinstance(binding, dict):
-        return binding.get(name, binding.get(f"{name[0].lower()}{name[1:]}"))
+        if name in binding:
+            return binding[name]
+        field_id = STRUCT_FIELD_IDS.get(name)
+        if field_id is not None:
+            return binding.get(str(field_id), binding.get(field_id))
+        return None
     return getattr(binding, name, None)
 
 
