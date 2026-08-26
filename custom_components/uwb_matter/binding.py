@@ -39,6 +39,12 @@ def field(binding: object, name: str) -> Any:
     if isinstance(binding, dict):
         if name in binding:
             return binding[name]
+        snake_name = {
+            "authMode": "auth_mode",
+            "fabricIndex": "fabric_index",
+        }.get(name)
+        if snake_name is not None and snake_name in binding:
+            return binding[snake_name]
         field_id = STRUCT_FIELD_IDS.get(name)
         if field_id is not None:
             return binding.get(str(field_id), binding.get(field_id))
@@ -59,10 +65,10 @@ def normalized_acl(value: object) -> list[dict[str, Any]]:
             for target in targets:
                 normalized_targets.append(
                     {
-                        "cluster": _acl_target_field(target, "cluster", 1),
-                        "endpoint": _acl_target_field(target, "endpoint", 2),
+                        "cluster": _acl_target_field(target, "cluster", 0),
+                        "endpoint": _acl_target_field(target, "endpoint", 1),
                         "device_type": _acl_target_field(
-                            target, "deviceType", 3
+                            target, "deviceType", 2
                         ),
                     }
                 )
@@ -89,7 +95,13 @@ def normalized_acl(value: object) -> list[dict[str, Any]]:
 def _acl_target_field(target: object, name: str, field_id: int) -> int | None:
     """Read one nullable AccessControlTarget field."""
     if isinstance(target, dict):
-        value = target.get(name, target.get(str(field_id), target.get(field_id)))
+        snake_name = "device_type" if name == "deviceType" else name
+        value = target.get(
+            name,
+            target.get(
+                snake_name, target.get(str(field_id), target.get(field_id))
+            ),
+        )
     else:
         value = getattr(target, name, None)
     return _integer(value)
