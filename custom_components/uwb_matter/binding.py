@@ -92,6 +92,36 @@ def normalized_acl(value: object) -> list[dict[str, Any]]:
     return result
 
 
+def matter_server_acl_backup(value: object) -> list[dict[str, Any]]:
+    """Convert ACL entries to Matter Server's paste-compatible JSON format."""
+    if not isinstance(value, list):
+        return []
+    normalized = normalized_acl(value)
+    result: list[dict[str, Any]] = []
+    for source, entry in zip(value, normalized, strict=True):
+        targets = entry["targets"]
+        raw_targets = None
+        if isinstance(targets, list):
+            raw_targets = [
+                {
+                    "0": target["cluster"],
+                    "1": target["endpoint"],
+                    "2": target["device_type"],
+                }
+                for target in targets
+            ]
+        result.append(
+            {
+                "1": entry["privilege"],
+                "2": entry["auth_mode"],
+                "3": entry["subjects"],
+                "4": raw_targets,
+                "254": _integer(field(source, "fabricIndex")),
+            }
+        )
+    return result
+
+
 def _acl_target_field(target: object, name: str, field_id: int) -> int | None:
     """Read one nullable AccessControlTarget field."""
     if isinstance(target, dict):

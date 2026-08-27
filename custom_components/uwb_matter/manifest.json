@@ -8,5 +8,5 @@
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/UWL-HA/UWL-Home-Assistant/issues",
-  "version": "0.17.0-beta.14"
+  "version": "0.17.0-beta.15"
 }

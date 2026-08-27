@@ -17,6 +17,7 @@ from matter_server.common.models import APICommand
 from .binding import (
     binding_path,
     door_lock_bindings,
+    matter_server_acl_backup,
     matter_lock_name,
     matter_lock_targets,
     normalized_acl,
@@ -172,7 +173,9 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 user_input[CONF_TARGET_LOCK]
             )
             try:
-                acl = await self._current_acl(target_node)
+                acl, pasteable_acl = await self._current_acl_with_backup(
+                    target_node
+                )
             except Exception:  # noqa: BLE001
                 return self.async_abort(reason="acl_read_failed")
             if not self._target_acl_allows(
@@ -180,6 +183,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
             ):
                 self._acl_target = (target_node, target_endpoint)
                 self._acl_backup = acl
+                self._acl_pasteable_backup = pasteable_acl
                 return await self.async_step_confirm_acl()
             return await self._finish_add_binding(target_node, target_endpoint)
         return self.async_show_form(
@@ -226,7 +230,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
                     },
                 ]
                 self._create_acl_recovery_notification(
-                    target_node, self._acl_backup
+                    target_node, self._acl_pasteable_backup
                 )
                 try:
                     await self._write_acl(target_node, updated_acl)
@@ -252,7 +256,9 @@ class UwbMatterOptionsFlow(OptionsFlow):
             errors=errors,
             description_placeholders={
                 "target_node": str(self._acl_target[0]),
-                "acl_backup": json.dumps(self._acl_backup, indent=2),
+                "acl_backup": json.dumps(
+                    self._acl_pasteable_backup, indent=2
+                ),
             },
         )
 
@@ -524,6 +530,13 @@ class UwbMatterOptionsFlow(OptionsFlow):
 
     async def _current_acl(self, target_node: int) -> list[dict[str, Any]]:
         """Read the current fabric's ACL directly from the target lock."""
+        acl, _ = await self._current_acl_with_backup(target_node)
+        return acl
+
+    async def _current_acl_with_backup(
+        self, target_node: int
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Read an ACL plus a Matter Server-compatible backup."""
         path = create_attribute_path(0, ACCESS_CONTROL_CLUSTER_ID, ACL_ATTRIBUTE_ID)
         values = await get_matter(self.hass).matter_client.send_command(
             APICommand.READ_ATTRIBUTE,
@@ -531,7 +544,8 @@ class UwbMatterOptionsFlow(OptionsFlow):
             attribute_path=path,
             fabric_filtered=True,
         )
-        acl = normalized_acl(values.get(path))
+        raw_acl = values.get(path)
+        acl = normalized_acl(raw_acl)
         if not acl or not any(
             entry.get("privilege") == 5
             and entry.get("auth_mode") == 2
@@ -539,7 +553,7 @@ class UwbMatterOptionsFlow(OptionsFlow):
             for entry in acl
         ):
             raise ValueError("ACL has no visible CASE administrator entry")
-        return acl
+        return acl, matter_server_acl_backup(raw_acl)
 
     async def _write_acl(
         self, target_node: int, acl: list[dict[str, Any]]
