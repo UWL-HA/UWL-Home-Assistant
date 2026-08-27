@@ -16,6 +16,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .binding import binding_path
 from .const import (
     CONF_CREDENTIAL_NAMES,
     CONF_CREDENTIAL_PRESENCE,
@@ -95,6 +96,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     presence_path = create_attribute_path(
         ENDPOINT_ID, CUSTOM_CLUSTER_ID, DEVICE_IN_RANGE_ATTRIBUTE_ID
     )
+    binding_attribute_path = binding_path(ENDPOINT_ID)
+
+    for node in matter.matter_client.get_nodes():
+        if presence_path not in node.node_data.attributes:
+            continue
+        try:
+            values = await matter.matter_client.read_attribute(
+                node.node_id, binding_attribute_path
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if binding_attribute_path not in values:
+            continue
+        value = values.get(binding_attribute_path)
+        if callable(update := getattr(node, "update_attribute", None)):
+            update(binding_attribute_path, value)
+        else:
+            node.node_data.attributes[binding_attribute_path] = value
 
     def track_node(node: object) -> None:
         """Track live UWB updates independently of enabled entities."""
