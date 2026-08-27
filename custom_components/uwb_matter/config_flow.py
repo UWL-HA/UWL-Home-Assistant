@@ -10,6 +10,7 @@ from homeassistant.components.matter.helpers import get_matter
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from matter_server.common.helpers.util import create_attribute_path
 from matter_server.common.models import APICommand
 
@@ -23,6 +24,7 @@ from .binding import (
     target_key,
 )
 from .const import (
+    BINDING_UPDATE_SIGNAL,
     CONF_CREDENTIAL_NAMES,
     CONF_CREDENTIAL_PRESENCE,
     CONF_STALE_TIMEOUT,
@@ -367,6 +369,11 @@ class UwbMatterOptionsFlow(OptionsFlow):
         actual = await self._current_bindings()
         if self._binding_signature(actual) != self._binding_signature(bindings):
             raise ValueError("Matter binding verification failed")
+        async_dispatcher_send(
+            self.hass,
+            f"{BINDING_UPDATE_SIGNAL}_{self._binding_source}",
+            actual,
+        )
         self.hass.async_create_task(
             self.hass.config_entries.async_reload(self.config_entry.entry_id),
             "reload UltraWideLock after binding change",

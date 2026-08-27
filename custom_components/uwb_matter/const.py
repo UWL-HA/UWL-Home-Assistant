@@ -3,6 +3,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "uwb_matter"
+BINDING_UPDATE_SIGNAL = f"{DOMAIN}_binding_update"
 CONF_CREDENTIAL_NAMES = "credential_names"
 CONF_CREDENTIAL_PRESENCE = "credential_presence"
 CONF_STALE_TIMEOUT = "stale_timeout_seconds"

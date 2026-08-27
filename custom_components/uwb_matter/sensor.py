@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 from matter_server.common.helpers.util import create_attribute_path
@@ -21,6 +22,7 @@ from matter_server.common.models import EventType, MatterNodeEvent
 
 from .binding import door_lock_bindings, matter_lock_info
 from .const import (
+    BINDING_UPDATE_SIGNAL,
     BINDING_ATTRIBUTE_ID,
     BINDING_CLUSTER_ID,
     CONF_CREDENTIAL_NAMES,
@@ -271,6 +273,21 @@ class UwbBoundLocksSensor(UwbMatterEntity, SensorEntity):
     ) -> None:
         super().__init__(hass, node_id, cluster_id, attribute_id)
         self._binding_reload_pending = False
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to direct binding writes as well as Matter events."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self._hass,
+                f"{BINDING_UPDATE_SIGNAL}_{self._node_id}",
+                self._binding_written,
+            )
+        )
+
+    def _binding_written(self, value: object) -> None:
+        """Apply a binding write immediately to the active entity."""
+        self._attribute_updated(EventType.ATTRIBUTE_UPDATED, value)
 
     def _attribute_updated(self, event: EventType, data: object) -> None:
         """Reload entities when the presence of a Door Lock binding changes."""
