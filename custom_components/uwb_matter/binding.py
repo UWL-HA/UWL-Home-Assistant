@@ -7,8 +7,21 @@ from typing import Any
 from homeassistant.components.matter.const import DOMAIN as MATTER_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from matter_server.common.helpers.util import create_attribute_path
 
-from .const import DOOR_LOCK_CLUSTER_ID
+from .const import (
+    BINDING_ATTRIBUTE_ID,
+    BINDING_CLUSTER_ID,
+    DOOR_LOCK_CLUSTER_ID,
+    ENDPOINT_ID,
+)
+
+
+def binding_path(endpoint: int = ENDPOINT_ID) -> str:
+    """Return the standard Matter Binding attribute path."""
+    return create_attribute_path(
+        endpoint, BINDING_CLUSTER_ID, BINDING_ATTRIBUTE_ID
+    )
 
 STRUCT_FIELD_IDS = {
     "node": 1,
@@ -35,31 +48,63 @@ def field(binding: object, name: str) -> Any:
     return getattr(binding, name, None)
 
 
-def normalized_bindings(value: object) -> list[dict[str, int]]:
+def normalized_bindings(value: object) -> list[dict[str, int | None]]:
     """Convert cached bindings to values accepted by Matter Server."""
     if not isinstance(value, list):
         return []
-    result: list[dict[str, int]] = []
+    result: list[dict[str, int | None]] = []
     for item in value:
-        target = {
-            key: item_value
-            for key in ("node", "group", "endpoint", "cluster")
-            if isinstance((item_value := field(item, key)), int)
-        }
-        if target:
+        target: dict[str, int | None] = {}
+        for key in ("node", "group", "endpoint", "cluster"):
+            value = field(item, key)
+            target[key] = value if isinstance(value, int) else None
+        if target.get("node") is not None or target.get("group") is not None:
             result.append(target)
     return result
 
 
-def door_lock_bindings(value: object) -> list[dict[str, int]]:
+def door_lock_bindings(value: object) -> list[dict[str, int | None]]:
     """Return unicast Door Lock targets only."""
     return [
         item
         for item in normalized_bindings(value)
         if item.get("cluster") == DOOR_LOCK_CLUSTER_ID
-        and "node" in item
-        and "endpoint" in item
+        and item.get("node") is not None
+        and item.get("endpoint") is not None
     ]
+
+
+def target_key(node_id: int, endpoint: int) -> str:
+    """Create a stable UI key for a target endpoint."""
+    return f"{node_id}:{endpoint}"
+
+
+def parse_target_key(value: str) -> tuple[int, int]:
+    """Parse a target key from the options flow."""
+    node_id, endpoint = value.split(":", 1)
+    return int(node_id), int(endpoint)
+
+
+def matter_lock_targets(hass: HomeAssistant, matter: Any) -> dict[str, str]:
+    """Return Matter Door Lock endpoints with friendly Home Assistant names."""
+    registry = er.async_get(hass)
+    targets: dict[str, str] = {}
+    for node in matter.matter_client.get_nodes():
+        for path in node.node_data.attributes:
+            parts = path.split("/")
+            if len(parts) != 3:
+                continue
+            try:
+                endpoint, cluster, attribute = map(int, parts)
+            except ValueError:
+                continue
+            if cluster != DOOR_LOCK_CLUSTER_ID or attribute != 0:
+                continue
+            key = target_key(node.node_id, endpoint)
+            targets[key] = matter_lock_name(
+                hass, registry, node.node_id, endpoint, node.name
+            )
+    return targets
 
 
 def matter_lock_name(

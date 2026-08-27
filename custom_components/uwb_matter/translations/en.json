@@ -28,10 +28,67 @@
     "step": {
       "init": {
         "title": "UltraWideLock settings",
-        "description": "Choose whether to manage live-data freshness or detected UWB devices.",
+        "description": "Choose whether to manage live-data freshness, detected UWB devices, or a standard Matter lock binding.",
         "menu_options": {
           "data_freshness": "UWB data freshness",
-          "credentials": "Detected UWB devices"
+          "credentials": "Detected UWB devices",
+          "matter_binding": "Matter lock binding"
+        }
+      },
+      "matter_binding": {
+        "title": "Matter lock binding",
+        "description": "Choose the UltraWideLock whose standard Matter Door Lock binding you want to add or remove. This integration changes only the UltraWideLock Binding Table. The target lock ACL remains under your manual control.",
+        "data": {
+          "source_lock": "UltraWideLock"
+        }
+      },
+      "binding_action": {
+        "title": "Matter lock binding",
+        "description": "Choose whether to add or remove a bound Matter lock.",
+        "menu_options": {
+          "add_binding": "Add a bound lock",
+          "remove_binding": "Remove a bound lock"
+        }
+      },
+      "add_binding": {
+        "title": "Add a bound lock",
+        "description": "Choose the Matter Door Lock endpoint to add to the UltraWideLock Binding Table. After the binding has been written and verified, the next screen explains how to grant the required ACL permission manually in Matter Server.",
+        "data": {
+          "target_lock": "Matter lock"
+        }
+      },
+      "manual_acl_add": {
+        "title": "Grant the binding access in Matter Server",
+        "description": "The binding has been added to **{source_lock}**. The target lock must now grant this UltraWideLock permission before bound lock and unlock commands can work. The integration will not change the ACL automatically.\n\n**Target lock:** `{target_lock}` (node `{target_node}`)\n**UltraWideLock:** `{source_lock}` (node `{source_node}`)\n\n1. Go to **Settings > Apps > Matter Server**.\n2. Press **Open Web UI**.\n3. Select **{target_lock}**.\n4. Open **Endpoint 0**.\n5. Press the **settings wheel** in the top-right corner.\n6. Switch **Developer Mode** on and close the settings.\n7. Open **AccessControl**.\n8. Expand **Access Control — ACL Entries**.\n9. First check whether an **Operate (3)** or higher entry for **{source_lock}** already targets **EP {target_endpoint} · DoorLock (0x0101)** and shows **backs binding**. If it does, do not create a duplicate and continue with the confirmation below.\n10. Otherwise, press **Add ACL entry**.\n11. Set **Privilege** to **Operate (3)**.\n12. Under **Known nodes**, choose **{source_lock}** (node `{source_node}`).\n13. Set **Endpoint** to **EP {target_endpoint}** and **Cluster** to **DoorLock (0x0101)**.\n14. Press **Add target**, then press **Add**.\n15. Verify that the **Relationship** column shows **backs binding** and your UltraWideLock.\n\nIf **Add ACL entry** is disabled because the list is full, do not delete the controller's protected Administer entry. Review obsolete entries first. You can later delete this permission from the same ACL overview.",
+        "data": {
+          "manual_acl_confirmed": "I added the ACL entry and verified the binding relationship"
+        },
+        "data_description": {
+          "manual_acl_confirmed": "Only confirm after Matter Server shows the UltraWideLock ACL entry with Operate access to the selected DoorLock endpoint."
+        }
+      },
+      "remove_binding": {
+        "title": "Remove a bound lock",
+        "description": "Choose the Door Lock binding to remove. The target lock ACL is not changed automatically; cleanup instructions follow after the binding has been removed.",
+        "data": {
+          "binding_to_remove": "Bound lock"
+        }
+      },
+      "confirm_remove_binding": {
+        "title": "Confirm binding removal",
+        "description": "Remove the binding from **{source_lock}** to **{target_lock}**? This stops the UltraWideLock from targeting that lock. It does not yet remove the permission stored in the target lock ACL.",
+        "data": {
+          "confirm_binding_removal": "I want to remove this binding"
+        }
+      },
+      "manual_acl_remove": {
+        "title": "Remove the unused ACL permission",
+        "description": "The binding has been removed from **{source_lock}**. Its ACL permission may still remain on **{target_lock}** and can now be removed manually.\n\n**Target lock:** `{target_lock}` (node `{target_node}`)\n**UltraWideLock:** `{source_lock}` (node `{source_node}`)\n\n1. Go to **Settings > Apps > Matter Server**.\n2. Press **Open Web UI**.\n3. Select **{target_lock}**.\n4. Open **Endpoint 0**.\n5. Press the **settings wheel** in the top-right corner.\n6. Switch **Developer Mode** on and close the settings.\n7. Open **AccessControl**.\n8. Expand **Access Control — ACL Entries**.\n9. Find the **Operate (3)** entry whose subject is **{source_lock}** (node `{source_node}`) and whose target is **EP {target_endpoint} · DoorLock (0x0101)**.\n10. Press **Delete** on that entry and confirm.\n\nBecause the binding has already been removed, the Relationship column may no longer say **backs binding**. Identify the entry using the UltraWideLock node and DoorLock target shown above. Never delete the protected Administer entry for the current controller. Leaving the UWL entry in place does not recreate the binding, but it leaves unused permission on the target lock.",
+        "data": {
+          "manual_acl_confirmed": "I reviewed the ACL and removed the UWL permission, or intentionally chose to retain it"
+        },
+        "data_description": {
+          "manual_acl_confirmed": "Removing the ACL entry follows least privilege. Retaining it leaves permission available if you recreate the binding later."
         }
       },
       "data_freshness": {
@@ -63,6 +120,18 @@
           "create_presence_sensor": "Creates a standard Home Assistant occupancy binary sensor attached to every UltraWideLock that sees this credential. Disable it to remove the sensor while retaining the friendly name."
         }
       }
+    },
+    "error": {
+      "manual_acl_not_confirmed": "Complete or consciously review the manual ACL step before finishing.",
+      "binding_removal_not_confirmed": "Confirm that you want to remove this binding."
+    },
+    "abort": {
+      "no_ultrawidelocks": "No available UltraWideLock nodes were found.",
+      "no_matter_locks": "No other Matter Door Lock endpoints were found.",
+      "no_door_lock_bindings": "This UltraWideLock has no Door Lock bindings to remove.",
+      "binding_write_failed": "Matter Server could not create or verify the binding. No ACL change was attempted.",
+      "binding_not_found": "The selected binding no longer exists. Nothing was changed.",
+      "binding_remove_failed": "Matter Server could not remove or verify the binding. No ACL change was attempted."
     }
   }
 }
