@@ -58,13 +58,13 @@
         }
       },
       "manual_acl_add": {
-        "title": "Grant the binding access in Matter Server",
-        "description": "The binding has been added to **{source_lock}**. The target lock must now grant this UltraWideLock permission before bound lock and unlock commands can work. The integration will not change the ACL automatically.\n\n**Target lock:** `{target_lock}` (node `{target_node}`)\n**UltraWideLock:** `{source_lock}` (node `{source_node}`)\n\n1. Go to **Settings > Apps > Matter Server**.\n2. Press **Open Web UI**.\n3. Select **{target_lock}**.\n4. Open **Endpoint 0**.\n5. Press the **settings wheel** in the top-right corner.\n6. Switch **Developer Mode** on and close the settings.\n7. Open **AccessControl**.\n8. Expand **Access Control — ACL Entries**.\n9. First check whether an **Operate (3)** or higher entry for **{source_lock}** already targets **EP {target_endpoint} · DoorLock (0x0101)** and shows **backs binding**. If it does, do not create a duplicate and continue with the confirmation below.\n10. Otherwise, press **Add ACL entry**.\n11. Set **Privilege** to **Operate (3)**.\n12. Under **Known nodes**, choose **{source_lock}** (node `{source_node}`).\n13. Set **Endpoint** to **EP {target_endpoint}** and **Cluster** to **DoorLock (0x0101)**.\n14. Press **Add target**, then press **Add**.\n15. Verify that the **Relationship** column shows **backs binding** and your UltraWideLock.\n\nIf **Add ACL entry** is disabled because the list is full, do not delete the controller's protected Administer entry. Review obsolete entries first. You can later delete this permission from the same ACL overview.",
+        "title": "Finish the binding in Matter Server",
+        "description": "The binding has been added to **{source_lock}**, but the target lock must still grant it permission before bound lock and unlock commands can work. The integration does not change the ACL automatically.\n\n1. Go to **Settings > Apps > Matter Server**.\n2. Press **Open Web UI**.\n3. Select your UltraWideLock: **{source_lock}** (node `{source_node}`).\n4. Open **Endpoint 1**.\n5. Expand **Bindings (1)**.\n6. Find **{target_lock}** and the **ACL on target** column.\n7. Press **Fix ACL**.\n8. Wait until **ACL missing** disappears and Matter Server confirms the ACL on the target.\n\nThe **Fix ACL** action is provided by Matter Server. It adds the required **Operate (3)** permission for this UltraWideLock to **EP {target_endpoint} · DoorLock (0x0101)** on the selected target lock. If the button reports that the ACL is full, review the target lock's ACL entries in Developer Mode; never delete the protected Administer entry for the current controller.",
         "data": {
-          "manual_acl_confirmed": "I added the ACL entry and verified the binding relationship"
+          "manual_acl_confirmed": "I pressed Fix ACL and Matter Server no longer shows ACL missing"
         },
         "data_description": {
-          "manual_acl_confirmed": "Only confirm after Matter Server shows the UltraWideLock ACL entry with Operate access to the selected DoorLock endpoint."
+          "manual_acl_confirmed": "Only confirm after the binding overview shows that the required target ACL is present."
         }
       },
       "remove_binding": {
