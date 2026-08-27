@@ -110,10 +110,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if binding_attribute_path not in values:
             continue
         value = values.get(binding_attribute_path)
+        node.node_data.attributes[binding_attribute_path] = value
         if callable(update := getattr(node, "update_attribute", None)):
             update(binding_attribute_path, value)
-        else:
-            node.node_data.attributes[binding_attribute_path] = value
 
     def track_node(node: object) -> None:
         """Track live UWB updates independently of enabled entities."""

@@ -330,10 +330,9 @@ class UwbMatterOptionsFlow(OptionsFlow):
         values = await client.read_attribute(self._binding_source, path)
         value = values.get(path)
         node = client.get_node(self._binding_source)
+        node.node_data.attributes[path] = value
         if callable(update := getattr(node, "update_attribute", None)):
             update(path, value)
-        else:
-            node.node_data.attributes[path] = value
         return normalized_bindings(value)
 
     def _cached_bindings(self) -> list[dict[str, int | None]]:
