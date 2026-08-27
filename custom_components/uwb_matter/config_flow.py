@@ -52,6 +52,10 @@ CONF_CONFIRM_BINDING_REMOVAL = "confirm_binding_removal"
 CONF_BINDING_ACL_BACKUPS = "binding_acl_backups"
 CONF_CONFIRM_ACL_RISK = "confirm_acl_risk"
 CONF_ACL_BACKUP_SAVED = "acl_backup_saved"
+CONF_ACL_REMOVAL_STRATEGY = "acl_removal_strategy"
+ACL_RESTORE_ORIGINAL = "restore_original"
+ACL_REMOVE_UWL_ONLY = "remove_uwl_only"
+ACL_LEAVE_UNCHANGED = "leave_unchanged"
 
 
 class UwbMatterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -384,41 +388,22 @@ class UwbMatterOptionsFlow(OptionsFlow):
                     acl_after is not None
                     and isinstance(saved_backup, list)
                     and self._acl_signature(acl_after)
-                    == self._acl_signature(saved_backup)
+                    != self._acl_signature(saved_backup)
                 ):
-                    acl_after = saved_backup
-            try:
-                await self._write_bindings(bindings_after, reload=False)
-                if acl_after is not None:
-                    await self._write_acl(node_id, acl_after)
-            except Exception:  # noqa: BLE001
-                rollback_failed = False
-                if acl_before is not None:
-                    try:
-                        await self._write_acl(node_id, acl_before)
-                    except Exception:  # noqa: BLE001
-                        rollback_failed = True
-                try:
-                    await self._write_bindings(bindings_before, reload=False)
-                except Exception:  # noqa: BLE001
-                    rollback_failed = True
-                self._schedule_reload_after_binding_change()
-                return self.async_abort(
-                    reason=(
-                        "binding_remove_rollback_failed"
-                        if rollback_failed
-                        else "binding_remove_failed"
-                    )
-                )
-            options = dict(self.config_entry.options)
-            backups = dict(options.get(CONF_BINDING_ACL_BACKUPS, {}))
-            backups.pop(self._acl_backup_key(node_id, endpoint), None)
-            if backups:
-                options[CONF_BINDING_ACL_BACKUPS] = backups
-            else:
-                options.pop(CONF_BINDING_ACL_BACKUPS, None)
-            self._schedule_reload_after_binding_change()
-            return self.async_create_entry(title="", data=options)
+                    self._pending_bindings_before = bindings_before
+                    self._pending_bindings_after = bindings_after
+                    self._pending_acl_before = acl_before
+                    self._pending_acl_without_uwl = acl_after
+                    self._pending_acl_original = saved_backup
+                    return await self.async_step_acl_removal_strategy()
+            return await self._complete_binding_removal(
+                node_id,
+                endpoint,
+                bindings_before,
+                bindings_after,
+                acl_before,
+                acl_after,
+            )
         if user_input is not None:
             errors[CONF_CONFIRM_BINDING_REMOVAL] = (
                 "binding_removal_not_confirmed"
@@ -441,6 +426,111 @@ class UwbMatterOptionsFlow(OptionsFlow):
                 "target_endpoint": str(endpoint),
             },
         )
+
+    async def async_step_acl_removal_strategy(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Resolve a mismatch between the saved and current target ACL."""
+        node_id, endpoint = self._binding_to_remove
+        if user_input is not None:
+            try:
+                current_bindings = await self._current_bindings()
+                current_acl = await self._current_acl(node_id)
+            except Exception:  # noqa: BLE001
+                return self.async_abort(reason="acl_read_failed")
+            if (
+                self._binding_signature(current_bindings)
+                != self._binding_signature(self._pending_bindings_before)
+                or self._acl_signature(current_acl)
+                != self._acl_signature(self._pending_acl_before)
+            ):
+                return self.async_abort(reason="binding_removal_state_changed")
+
+            strategy = user_input[CONF_ACL_REMOVAL_STRATEGY]
+            if strategy == ACL_RESTORE_ORIGINAL:
+                acl_after = self._pending_acl_original
+            elif strategy == ACL_REMOVE_UWL_ONLY:
+                acl_after = self._pending_acl_without_uwl
+            else:
+                acl_after = None
+            return await self._complete_binding_removal(
+                node_id,
+                endpoint,
+                current_bindings,
+                self._pending_bindings_after,
+                current_acl,
+                acl_after,
+            )
+
+        return self.async_show_form(
+            step_id="acl_removal_strategy",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ACL_REMOVAL_STRATEGY,
+                        default=ACL_REMOVE_UWL_ONLY,
+                    ): vol.In(
+                        {
+                            ACL_REMOVE_UWL_ONLY: (
+                                "Remove only the UltraWideLock permission "
+                                "(recommended)"
+                            ),
+                            ACL_RESTORE_ORIGINAL: "Restore the complete original ACL",
+                            ACL_LEAVE_UNCHANGED: "Leave the current ACL unchanged",
+                        }
+                    )
+                }
+            ),
+            description_placeholders={
+                "target_lock": self._binding_remove_name,
+                "original_entries": str(len(self._pending_acl_original)),
+                "current_entries": str(len(self._pending_acl_before)),
+                "surgical_entries": str(len(self._pending_acl_without_uwl)),
+            },
+        )
+
+    async def _complete_binding_removal(
+        self,
+        node_id: int,
+        endpoint: int,
+        bindings_before: list[dict[str, int | None]],
+        bindings_after: list[dict[str, int | None]],
+        acl_before: list[dict[str, Any]] | None,
+        acl_after: list[dict[str, Any]] | None,
+    ) -> ConfigFlowResult:
+        """Write a reviewed binding removal and roll both tables back on error."""
+        try:
+            await self._write_bindings(bindings_after, reload=False)
+            if acl_after is not None:
+                await self._write_acl(node_id, acl_after)
+        except Exception:  # noqa: BLE001
+            rollback_failed = False
+            if acl_before is not None and acl_after is not None:
+                try:
+                    await self._write_acl(node_id, acl_before)
+                except Exception:  # noqa: BLE001
+                    rollback_failed = True
+            try:
+                await self._write_bindings(bindings_before, reload=False)
+            except Exception:  # noqa: BLE001
+                rollback_failed = True
+            self._schedule_reload_after_binding_change()
+            return self.async_abort(
+                reason=(
+                    "binding_remove_rollback_failed"
+                    if rollback_failed
+                    else "binding_remove_failed"
+                )
+            )
+        options = dict(self.config_entry.options)
+        backups = dict(options.get(CONF_BINDING_ACL_BACKUPS, {}))
+        backups.pop(self._acl_backup_key(node_id, endpoint), None)
+        if backups:
+            options[CONF_BINDING_ACL_BACKUPS] = backups
+        else:
+            options.pop(CONF_BINDING_ACL_BACKUPS, None)
+        self._schedule_reload_after_binding_change()
+        return self.async_create_entry(title="", data=options)
 
     def _acl_backup_key(self, target_node: int, endpoint: int) -> str:
         """Return the options key for one binding's original target ACL."""
@@ -585,6 +675,13 @@ class UwbMatterOptionsFlow(OptionsFlow):
     def _acl_signature(acl: list[dict[str, Any]]) -> list[str]:
         """Return an order-independent, exact signature for an ACL table."""
         return sorted(json.dumps(entry, sort_keys=True) for entry in acl)
+
+    @staticmethod
+    def _binding_signature(
+        bindings: list[dict[str, int | None]],
+    ) -> list[str]:
+        """Return an order-independent signature for a binding table."""
+        return sorted(json.dumps(entry, sort_keys=True) for entry in bindings)
 
     def _target_acl_allows(
         self, acl: list[dict[str, Any]], source_node: int, endpoint: int

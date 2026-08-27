@@ -73,11 +73,21 @@
           "restore_binding_acl": "Restore the original ACL permission state",
           "confirm_binding_removal": "I reviewed the target and understand the binding and ACL consequences"
         },
-        "data_description": {
-          "restore_binding_acl": "Recommended. Removes the narrowly scoped Door Lock permission together with the binding. If disabled, the binding is removed but the ACL permission remains.",
-          "confirm_binding_removal": "Required before Home Assistant writes either table."
-        }
+      "data_description": {
+        "restore_binding_acl": "Recommended. Removes the narrowly scoped Door Lock permission together with the binding. If disabled, the binding is removed but the ACL permission remains.",
+        "confirm_binding_removal": "Required before Home Assistant writes either table."
+      }
+    },
+    "acl_removal_strategy": {
+      "title": "The target lock ACL has changed",
+      "description": "The ACL that remains after removing only UltraWideLock does **not** match the original ACL saved when this binding was created. Nothing has been changed yet.\n\n**Bound lock:** `{target_lock}`\n**Original ACL entries:** `{original_entries}`\n**Current ACL entries:** `{current_entries}`\n**After removing only UltraWideLock:** `{surgical_entries}`\n\nChoose what should happen when the binding is removed:\n\n- **Remove only the UltraWideLock permission (recommended):** preserves every other current ACL change and removes only the exact CASE Operate entry created for this binding. Choose this when other permissions added since binding should remain.\n- **Restore the complete original ACL:** replaces the current ACL with the snapshot saved when binding was added. This also removes every legitimate ACL change made afterwards, so only choose it when you intentionally want that exact old state.\n- **Leave the current ACL unchanged:** removes only the Binding Table entry. The UltraWideLock stops targeting this lock, but its Matter permission remains and could be reused by a later binding.\n\nImmediately before writing, the integration reads both tables again. If either has changed while this screen was open, it stops without writing anything.",
+      "data": {
+        "acl_removal_strategy": "ACL action"
       },
+      "data_description": {
+        "acl_removal_strategy": "This choice affects only the target lock ACL. The selected Matter binding is removed in all three cases."
+      }
+    },
       "data_freshness": {
         "title": "UWB data freshness",
         "description": "This setting is independent of device names. It determines how long Home Assistant may show the latest live distance and movement when Matter updates stop arriving. After this timeout the data is marked stale and live values are cleared.",
@@ -123,6 +133,7 @@
       "binding_write_failed": "Matter Server could not create the binding. Any ACL change made by this flow was restored.",
       "acl_rollback_failed": "Creating the binding failed and the original ACL could not be restored automatically. Check the target lock ACL in Matter Server immediately; another Matter administrator or a factory reset may be required.",
       "acl_changed": "The target lock ACL changed after the backup was displayed. Nothing was written. Start the binding flow again to review and copy the current ACL.",
+      "binding_removal_state_changed": "The binding table or target lock ACL changed while the ACL choice was displayed. Nothing was written. Start the removal flow again to review the latest state.",
       "acl_read_failed": "The target lock ACL could not be read safely or has no visible CASE administrator. Nothing was written.",
       "binding_acl_not_found": "The exact narrowly scoped Door Lock ACL entry could not be found, so the integration did not remove the binding or change any ACL entry. Review the target lock ACL before trying again.",
       "binding_remove_failed": "The binding or ACL removal failed verification. The integration restored the previous binding table and ACL.",
