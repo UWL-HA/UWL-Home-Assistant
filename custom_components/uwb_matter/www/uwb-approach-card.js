@@ -288,6 +288,7 @@ class UwbOverviewCard extends HTMLElement {
         dataStatus: special("-freshness-status"),
         lastUwbUpdate: special("-freshness-last-update"),
         boundLock: find("sensor", binding, 0),
+        boundLockEntity: special("-bound-entity_id"),
       };
       this._resolved = true;
     } catch (error) {
@@ -361,6 +362,10 @@ class UwbOverviewCard extends HTMLElement {
     const available = lock && lock.state !== "unavailable";
     const title = this.config.title || lock?.attributes?.friendly_name || "UltraWideLock";
     const operating = this.state("operatingMode");
+    const boundEntityId = this.state("boundLockEntity")?.state;
+    const boundLock = boundEntityId ? this._hass.states[boundEntityId] : undefined;
+    const boundAvailable = boundLock && !["unknown", "unavailable"].includes(boundLock.state);
+    const boundUnlocked = boundLock?.state === "unlocked";
     const options = (operating?.attributes?.options || []).map(option =>
       `<option ${option === operating.state ? "selected" : ""}>${this.escape(option)}</option>`).join("");
     this.shadowRoot.innerHTML = `
@@ -372,7 +377,7 @@ class UwbOverviewCard extends HTMLElement {
         .primary{border:0;border-radius:20px;padding:9px 18px;background:var(--primary-color);color:var(--text-primary-color);font-weight:650;cursor:pointer}
         section{padding:15px 20px;border-top:1px solid var(--divider-color)}.section-head{display:flex;align-items:center;margin-bottom:10px;color:var(--secondary-text-color)}.section-head ha-icon{display:none}
         .metrics{display:flex;flex-wrap:wrap;gap:1px;background:var(--divider-color);border:1px solid var(--divider-color);border-radius:10px;overflow:hidden}.metric{flex:1 1 140px;border:0;text-align:left;background:var(--card-background-color);border-radius:0;padding:10px 11px;color:var(--primary-text-color);min-width:0;cursor:pointer}
-        .metric ha-icon{display:none}.metric small,.history small,.switch small{display:block;color:var(--secondary-text-color);margin:0 0 3px}.metric b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .metric ha-icon{display:none}.metric small,.history small,.switch small{display:block;color:var(--secondary-text-color);margin:0 0 3px}.metric b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bound-metric{display:flex;align-items:center;justify-content:space-between;gap:8px}.bound-metric>span{min-width:0}.bound-action{border:0;border-radius:16px;padding:6px 10px;background:var(--soft);color:var(--primary-color);font-weight:650;cursor:pointer;flex:none}.bound-action:disabled{opacity:.45;cursor:default}
         .configuration,.switches,.history-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:1px;background:var(--divider-color);border:1px solid var(--divider-color);border-radius:10px;overflow:hidden}.control{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:8px;padding:9px 11px;background:var(--card-background-color);cursor:pointer;min-width:0}.control ha-icon{color:var(--secondary-text-color);--mdc-icon-size:18px}.control>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .stepper{display:flex;align-items:center;gap:4px;min-width:0}.stepper button{width:26px;height:26px;border:0;border-radius:50%;background:var(--soft);color:var(--primary-color);font-size:17px;cursor:pointer;flex:none}.stepper b{min-width:52px;text-align:center;font-size:13px;white-space:nowrap}
         .select{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:8px;padding:9px 11px;background:var(--card-background-color);min-width:0}.select ha-icon{color:var(--secondary-text-color);--mdc-icon-size:18px}select{min-width:0;max-width:150px;border:0;border-radius:8px;padding:7px;background:var(--soft);color:var(--primary-text-color)}
@@ -390,7 +395,7 @@ class UwbOverviewCard extends HTMLElement {
           <button class="metric" data-info="${this.entity("movement") || ""}"><ha-icon icon="mdi:swap-horizontal"></ha-icon><small>Movement</small><b>${this.escape(this.display("movement", true))}</b></button>
           <button class="metric" data-info="${this.entity("dataStatus") || ""}"><ha-icon icon="mdi:access-point-check"></ha-icon><small>Data status</small><b>${this.escape(this.display("dataStatus", true))}</b></button>
           <button class="metric" data-info="${this.entity("lastUwbUpdate") || ""}"><ha-icon icon="mdi:update"></ha-icon><small>Last update</small><b>${this.escape(this.timestamp("lastUwbUpdate"))}</b></button>
-          <button class="metric" data-info="${this.entity("boundLock") || ""}"><ha-icon icon="mdi:link-variant"></ha-icon><small>Bound lock</small><b>${this.escape(this.display("boundLock"))}</b></button>
+          <div class="metric bound-metric" data-info="${this.entity("boundLock") || ""}"><span><small>Bound lock</small><b>${this.escape(this.display("boundLock"))}</b></span>${boundLock ? `<button class="bound-action" id="bound-lock" ${boundAvailable ? "" : "disabled"}>${boundUnlocked ? "Lock" : "Unlock"}</button>` : ""}</div>
         </div></section>
         <section><div class="section-head"><ha-icon icon="mdi:tune-variant"></ha-icon><h3>Unlock &amp; Relock Configuration</h3></div><div class="configuration">
           ${this.numberControl("approachDistance", "Approach distance", "mdi:map-marker-distance")}
@@ -416,6 +421,11 @@ class UwbOverviewCard extends HTMLElement {
     this.shadowRoot.getElementById("lock").disabled = !available;
     this.shadowRoot.getElementById("lock").onclick = () => this._hass.callService(
       "lock", unlocked ? "lock" : "unlock", { entity_id: this.config.lock_entity });
+    const boundControl = this.shadowRoot.getElementById("bound-lock");
+    if (boundControl) boundControl.onclick = event => {
+      event.stopPropagation();
+      this._hass.callService("lock", boundUnlocked ? "lock" : "unlock", { entity_id: boundEntityId });
+    };
     this.shadowRoot.querySelectorAll("[data-switch]").forEach(input => input.onchange = event =>
       this._hass.callService("switch", event.target.checked ? "turn_on" : "turn_off", { entity_id:event.target.dataset.switch }));
     this.shadowRoot.querySelectorAll("[data-number]").forEach(button => button.onclick = event => {

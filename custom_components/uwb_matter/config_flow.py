@@ -293,6 +293,13 @@ class UwbMatterOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             if user_input[CONF_MANUAL_ACL_CONFIRMED]:
+                await self._current_bindings()
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(
+                        self.config_entry.entry_id
+                    ),
+                    "refresh UltraWideLock after binding removal",
+                )
                 return self.async_create_entry(
                     title="", data=self.config_entry.options
                 )
